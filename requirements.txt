@@ -1,0 +1,53 @@
+# ============================================================
+# Dependencias base — API + Gradio + procesado de audio
+# Probado con Python 3.12 en Windows 11
+# ============================================================
+
+fastapi==0.136.3
+uvicorn[standard]==0.49.0
+SQLAlchemy==2.0.50
+python-dotenv==1.2.2
+gradio==6.18.0
+bcrypt==5.0.0
+pydub==0.25.1
+requests==2.34.2
+psycopg2-binary==2.9.12
+python-jose[cryptography]==3.5.0
+python-multipart==0.0.32
+openai-whisper==20250625
+huggingface_hub>=1.2.0
+# transformers se instala junto con TTS (ver sección TTS más abajo)
+numpy==2.4.6
+
+# ============================================================
+# PyTorch — instalar POR SEPARADO según plataforma:
+#
+# Windows/Linux CPU (sin GPU):
+#   pip install torch==2.7.1+cpu torchaudio==2.7.1+cpu \
+#       --index-url https://download.pytorch.org/whl/cpu
+#
+# Linux con CUDA 12.x:
+#   pip install torch torchaudio \
+#       --index-url https://download.pytorch.org/whl/cu121
+#
+# Raspberry Pi (ARM, sin GPU):
+#   pip install torch torchaudio
+#   (usa las wheels oficiales ARM de PyPI — más lentas)
+# ============================================================
+
+# ============================================================
+# TTS — instalar POR SEPARADO (no en PyPI estándar):
+#
+# Python 3.12 (requiere fork de Idiap):
+#   pip install git+https://github.com/idiap/coqui-ai-TTS
+#
+# Python ≤ 3.11:
+#   pip install TTS
+# ============================================================
+
+# ============================================================
+# Piper (síntesis TTS ligera, recomendado para Raspberry Pi):
+#   pip install piper-tts piper-phonemize
+#   Sistema: apt install espeak-ng   (Linux)
+#             choco install espeak   (Windows)
+# ============================================================

@@ -1,0 +1,60 @@
+# Entorno virtual Python
+venv/
+.venv/
+env/
+
+# Variables de entorno (contiene contraseñas y secretos)
+.env
+
+# Caché de modelos HuggingFace (hasta 2 GB por modelo)
+.hf_cache/
+
+# Caché de modelos Whisper
+.whisper_cache/
+
+# Dataset de audio (archivos grandes, transferir por separado)
+dataset/
+exports/
+
+# Base de datos SQLite y backups locales
+data_dev.sqlite3
+data_dev.sqlite3.backup
+*.dump
+*.sql
+
+# Sesión Gradio
+session.json
+
+# Scripts temporales de prueba
+tmp_*.py
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDEs
+.vscode/
+.idea/
+*.suo
+*.user
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
+logs/
