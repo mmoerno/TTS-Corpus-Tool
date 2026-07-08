@@ -198,6 +198,8 @@ Provincias soportadas: Almería (04), Cádiz (11), Córdoba (14), Granada (18), 
 
 Los topónimos se usan como prompt de Whisper para mejorar el reconocimiento de nombres propios locales. Se cargan desde `NGA_TOPONIMOS_*.csv` (Nomenclátor Geográfico de Andalucía, IGN) via `data/migrar_nga.py`.
 
+> **Nota sobre este repositorio público**: la versión original del catálogo NGA (26 937 topónimos: parajes, cortijos, arroyos, accidentes geográficos... con sus coordenadas) es un dato confidencial y no se puede publicar. El `NGA_TOPONIMOS_20260309.csv` incluido aquí es una versión reducida a información pública: un registro por municipio con su nombre y código INE (155 municipios), usando el propio nombre del municipio como marcador de posición en vez de un topónimo real. Sirve como ejemplo para poder ejecutar `data/migrar_nga.py` y construir la base de datos con la tabla `municipio` completa; solo se pierde el prompt de topónimos NGA real para Whisper. Si tienes acceso a un catálogo NGA completo propio, puedes sustituir el fichero por el tuyo manteniendo el mismo nombre y columnas.
+
 #### `usuario`
 | columna       | tipo         | descripción                                     |
 |---------------|--------------|-------------------------------------------------|
@@ -863,7 +865,7 @@ El código de la primera parte del nombre de archivo permite filtrar por hablant
 | Dataset de audio | `rsync` / pendrive / scp | Carpeta `dataset/` — puede ser grande |
 | Modelos HF (XTTS) | Copiar `.hf_cache/` | ~1.8 GB; si no se copia, se vuelven a descargar |
 | `.env` | Copiar y editar | Ajustar credenciales de BD de la nueva máquina |
-| `NGA_TOPONIMOS_*.csv` | Incluido en el código | Ya está en el repositorio |
+| `NGA_TOPONIMOS_*.csv` | Incluido en el código | Versión reducida a datos públicos de municipio (ver Sección 4) — sustituye por tu catálogo NGA completo si lo tienes |
 
 ### Procedimiento completo
 
