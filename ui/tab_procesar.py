@@ -54,6 +54,87 @@ def _finalizar_splits(local_csv, mun_dir, municipio, provincia, log):
     log.append(f"CSV global actualizado: {GLOBAL_CSV}")
 
 
+def _cod_municipio_de_choice(municipio_choice: str) -> str | None:
+    m = re.search(r"\(INE (\d+)\)", municipio_choice or "")
+    return m.group(1) if m else None
+
+
+def _listar_hablantes(cod_municipio: str) -> list[dict]:
+    """Hablantes ya registrados para un municipio (código INE), ordenados por código."""
+    from data.db import get_session, Hablante, Municipio as MunicipioModel
+    with get_session() as s:
+        mun = s.query(MunicipioModel).filter_by(codigo_ine=cod_municipio).first()
+        if not mun:
+            return []
+        habs = (
+            s.query(Hablante)
+            .filter_by(municipio_id=mun.id)
+            .order_by(Hablante.codigo)
+            .all()
+        )
+        return [{"codigo": h.codigo, "edad": h.edad, "genero": h.genero} for h in habs]
+
+
+def _siguiente_codigo_hablante(existentes: list[str]) -> str:
+    usados = {int(c) for c in existentes if c.isdigit()}
+    i = 1
+    while i in usados:
+        i += 1
+    return str(i).zfill(2)
+
+
+def hablantes_choices_ui(municipio_choice: str):
+    """Refresca el desplegable de hablantes y el código sugerido para uno nuevo."""
+    cod_municipio = _cod_municipio_de_choice(municipio_choice)
+    if not cod_municipio:
+        return gr.update(choices=[], value=None), gr.update(value="01")
+    habs = _listar_hablantes(cod_municipio)
+    choices = [
+        (f"{h['codigo']} ({h['genero'] or '?'}, {h['edad'] or '?'} años)", h["codigo"])
+        for h in habs
+    ]
+    siguiente = _siguiente_codigo_hablante([h["codigo"] for h in habs])
+    valor = choices[0][1] if choices else None
+    return gr.update(choices=choices, value=valor), gr.update(value=siguiente)
+
+
+def registrar_hablante_ui(municipio_choice: str, codigo: str, edad, genero: str):
+    """Da de alta un hablante nuevo para el municipio seleccionado."""
+    cod_municipio = _cod_municipio_de_choice(municipio_choice)
+    if not cod_municipio:
+        return gr.update(), gr.update(), "Error: selecciona un municipio primero."
+
+    codigo = (codigo or "").strip()
+    if not re.match(r"^\d{2}$", codigo):
+        return gr.update(), gr.update(), "Error: el código debe tener exactamente 2 dígitos (ej: 01)."
+
+    from data.db import get_session, Hablante, Municipio as MunicipioModel
+    from sqlalchemy.exc import IntegrityError
+    try:
+        with get_session() as s:
+            mun = s.query(MunicipioModel).filter_by(codigo_ine=cod_municipio).first()
+            if not mun:
+                return gr.update(), gr.update(), "Error: municipio no encontrado en la base de datos."
+            existe = s.query(Hablante).filter_by(municipio_id=mun.id, codigo=codigo).first()
+            if existe:
+                return gr.update(), gr.update(), f"Error: ya existe un hablante con código {codigo} en este municipio."
+            s.add(Hablante(
+                municipio_id=mun.id,
+                codigo=codigo,
+                edad=int(edad) if edad is not None else None,
+                genero=genero or None,
+            ))
+        msg = f"Hablante {codigo} registrado."
+    except IntegrityError:
+        return gr.update(), gr.update(), f"Error: ya existe un hablante con código {codigo} en este municipio."
+    except Exception as e:
+        return gr.update(), gr.update(), f"Error registrando hablante: {e}"
+
+    hab_upd, siguiente_upd = hablantes_choices_ui(municipio_choice)
+    hab_upd["value"] = codigo
+    return hab_upd, siguiente_upd, msg
+
+
 def buscar_municipios_ui(provincia_choice: str, texto: str, municipios_nga: dict):
     if not provincia_choice or not texto.strip():
         return gr.update(choices=[], value=None)
@@ -127,8 +208,8 @@ def procesar_audios(
         yield L("Error: selecciona una provincia."); return
     if not municipio_choice:
         yield L("Error: selecciona un municipio."); return
-    if not re.match(r"^\d{2}$", hablante_id.strip()):
-        yield L("Error: el ID de hablante debe tener exactamente 2 digitos (ej: 01)."); return
+    if not hablante_id or not re.match(r"^\d{2}$", str(hablante_id).strip()):
+        yield L("Error: selecciona un hablante (o registra uno nuevo)."); return
 
     cod_prov      = provincia_choice.split(" - ")[0].strip()
     provincia     = PROVINCIAS_DISPLAY[cod_prov]
@@ -137,7 +218,7 @@ def procesar_audios(
         yield L("Error: municipio no valido."); return
     cod_municipio = m.group(1)
     municipio     = municipio_choice.split(" (INE")[0].strip()
-    hablante_id   = hablante_id.strip()
+    hablante_id   = str(hablante_id).strip()
 
     yield L(f"{len(files)} archivo(s) encontrado(s)")
     yield L(f"Municipio: {municipio} ({cod_municipio}) | Hablante: {hablante_id}")
@@ -296,23 +377,38 @@ def build_tab(provincias_choices: list, municipios_nga: dict, nga_toponimos: dic
             label="Arrastra los archivos de audio aqui", file_count="multiple",
             file_types=[".wav",".mp3",".ogg",".opus",".m4a",".flac",".mp4",".mkv",".mov",".webm",".aac",".wma"],
         )
-    grabar_panel = gr.Group(visible=False)
-    with grabar_panel:
-        audio_grabado = gr.Audio(
+    audio_grabado = gr.State(None)
+
+    # El componente de grabación se monta bajo demanda (gr.render) en vez de
+    # crearse oculto (gr.Group visible=False): en Gradio, un Audio con
+    # sources=["microphone"] que nace oculto no inicializa bien el JS del
+    # micrófono y se queda pillado en el estado de grabación (parar/reanudar,
+    # sin llegar nunca a guardar el fichero) aunque luego se haga visible.
+    @gr.render(inputs=modo_entrada_radio)
+    def _render_grabar_panel(modo):
+        if modo != "Grabar con micrófono":
+            return
+        audio_comp = gr.Audio(
             sources=["microphone"], type="filepath",
             label="Graba el audio directamente desde el micrófono",
         )
+        gr.Markdown(
+            "_Al pulsar **Parar** el audio ya queda guardado, no hace falta "
+            "ningún botón adicional. La duración puede aparecer como 0:00 "
+            "por un detalle visual de Gradio; no afecta al audio grabado. "
+            "Usa la ❌ para descartarlo y grabar de nuevo._"
+        )
+        audio_comp.change(lambda x: x, inputs=audio_comp, outputs=audio_grabado)
 
     def cambiar_modo(modo):
         return (
             gr.update(visible=modo == "Escribir ruta de carpeta"),
             gr.update(visible=modo == "Arrastrar archivos"),
-            gr.update(visible=modo == "Grabar con micrófono"),
         )
 
     modo_entrada_radio.change(
         cambiar_modo, inputs=modo_entrada_radio,
-        outputs=[carpeta_panel, drag_panel, grabar_panel],
+        outputs=[carpeta_panel, drag_panel],
     )
 
     gr.Markdown("### Localizacion y hablante")
@@ -326,9 +422,27 @@ def build_tab(provincias_choices: list, municipios_nga: dict, nga_toponimos: dic
         inputs=[prov_dd, mun_search], outputs=mun_dd,
     )
 
+    with gr.Row():
+        hab_dd = gr.Dropdown(choices=[], label="Hablante", info="Hablantes ya registrados en este municipio")
+
+    with gr.Accordion("Registrar nuevo hablante", open=False):
+        with gr.Row():
+            nuevo_cod_in    = gr.Textbox(label="Código (2 dígitos)", value="01", scale=1)
+            nuevo_edad_in   = gr.Number(label="Edad", precision=0, scale=1)
+            nuevo_genero_dd = gr.Dropdown(choices=["M", "F", "X"], label="Género", scale=1)
+            btn_nuevo_hab   = gr.Button("Registrar hablante", scale=1)
+        msg_nuevo_hab = gr.Markdown()
+
+    mun_dd.change(hablantes_choices_ui, inputs=mun_dd, outputs=[hab_dd, nuevo_cod_in])
+
+    btn_nuevo_hab.click(
+        registrar_hablante_ui,
+        inputs=[mun_dd, nuevo_cod_in, nuevo_edad_in, nuevo_genero_dd],
+        outputs=[hab_dd, nuevo_cod_in, msg_nuevo_hab],
+    )
+
     gr.Markdown("### Parametros de procesado")
     with gr.Row():
-        hab_in       = gr.Textbox(label="ID Hablante (2 digitos)", value="01", scale=1)
         wmodel_dd    = gr.Dropdown(choices=WHISPER_MODELOS, value=WHISPER_DEFAULT, label="Modelo Whisper", scale=1)
         modo_proc_dd = gr.Dropdown(
             choices=["Transcribir con Whisper (automatico)", "Solo crear carpetas y WAVs (sin transcribir)"],
@@ -344,6 +458,6 @@ def build_tab(provincias_choices: list, municipios_nga: dict, nga_toponimos: dic
 
     btn_proc.click(
         _procesar,
-        inputs=[carpeta_in, archivos_drag, audio_grabado, modo_entrada_radio, prov_dd, mun_dd, hab_in, wmodel_dd, modo_proc_dd, prompt_chk],
+        inputs=[carpeta_in, archivos_drag, audio_grabado, modo_entrada_radio, prov_dd, mun_dd, hab_dd, wmodel_dd, modo_proc_dd, prompt_chk],
         outputs=log_proc,
     )
