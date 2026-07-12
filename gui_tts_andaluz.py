@@ -225,6 +225,7 @@ with gr.Blocks(title="Dataset TTS Multiaccento Andaluz") as app:
     with gr.Row():
         dataset_banner_md = gr.Markdown(banner_dataset())
         btn_refrescar = gr.Button("Refrescar estado", scale=0)
+        gr.Button("Cerrar sesión", scale=0, link="/logout")
     btn_refrescar.click(banner_dataset, outputs=dataset_banner_md)
 
     with gr.Tab("Bienvenida"):
