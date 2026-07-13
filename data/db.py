@@ -100,9 +100,10 @@ class Municipio(Base):
     codigo_ine     = Column(String(5),    nullable=False, unique=True)
     nombre         = Column(String(100),  nullable=False)
     nombre_oficial = Column(String(100))
-    latitud        = Column(Float)
-    longitud       = Column(Float)
-    altitud        = Column(Float)
+    # Centroide aproximado de sus topónimos en el NGA (coordenadas UTM
+    # proyectadas, EPSG:25830 / ETRS89 huso 30N — no geográficas lat/long).
+    coordenada_x   = Column(Float)
+    coordenada_y   = Column(Float)
 
     provincia = relationship("Provincia", back_populates="municipios")
     hablantes = relationship("Hablante",  back_populates="municipio")

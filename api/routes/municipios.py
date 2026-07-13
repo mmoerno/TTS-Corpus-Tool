@@ -23,8 +23,8 @@ def listar_municipios(
             "nombre": m.nombre,
             "codigo_ine": m.codigo_ine,
             "provincia_id": m.provincia_id,
-            "latitud": m.latitud,
-            "longitud": m.longitud,
+            "coordenada_x": m.coordenada_x,
+            "coordenada_y": m.coordenada_y,
         }
         for m in q.order_by(Municipio.nombre).all()
     ]

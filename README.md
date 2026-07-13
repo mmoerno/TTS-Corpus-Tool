@@ -184,9 +184,8 @@ Provincias soportadas: Almería (04), Cádiz (11), Córdoba (14), Granada (18), 
 | codigo_ine     | VARCHAR(5)   | Código INE de 5 dígitos (ej. "41095")    |
 | nombre         | VARCHAR(100) | Nombre normalizado                        |
 | nombre_oficial | VARCHAR(100) | Nombre oficial completo (opcional)        |
-| latitud        | FLOAT        | Coordenadas geográficas                   |
-| longitud       | FLOAT        |                                           |
-| altitud        | FLOAT        |                                           |
+| coordenada_x   | FLOAT        | Centroide UTM de sus topónimos (EPSG:25830, ETRS89 huso 30N) |
+| coordenada_y   | FLOAT        |                                           |
 
 #### `toponimo`
 | columna      | tipo         | descripción                                      |
