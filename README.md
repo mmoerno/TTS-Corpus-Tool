@@ -4,28 +4,304 @@ Herramienta de TFG (Trabajo de Fin de Grado) para la construcción, revisión y 
 
 ---
 
+## Instalación
+
+**Sistemas operativos soportados**: **Windows 10/11** y **Linux** (incluida Raspberry Pi OS / ARM64). No se ha probado en macOS.
+
+**Requisitos**: Python **3.10, 3.11 o 3.12** (3.12 necesita un paso extra para XTTS v2, explicado más abajo; versiones más recientes de Python no se han probado y pueden fallar) · PostgreSQL 14+ · ffmpeg. `espeak-ng` solo hace falta si vas a usar Piper; CUDA solo si vas a usar F5-TTS o XTTS con GPU.
+
+### Windows
+
+1. Doble clic en **`Instalar.exe`** (o, desde una terminal: `powershell -ExecutionPolicy Bypass -File install.ps1`). Si es una máquina completamente limpia sin Python ni Git instalados, usa `install_v2.ps1` en su lugar (ver detalles más abajo).
+2. El instalador crea el entorno virtual, la base de datos, carga automáticamente los municipios y topónimos del NGA, y al final pregunta si quieres crear el primer usuario administrador — **responde que sí** («s») y anota el usuario y la contraseña que introduzcas: son tus credenciales para entrar a la aplicación, no hay ningún otro sitio donde configurarlas.
+3. Doble clic en **`IniciarApp.exe`** (o `.\arrancar_todo.ps1`) para arrancar la API y la interfaz.
+
+### Linux / Raspberry Pi
+
+1. `chmod +x install.sh && ./install.sh`
+2. Igual que en Windows: el instalador carga el NGA automáticamente y te pregunta si quieres crear el administrador — acepta y anota las credenciales.
+3. Arranca en dos terminales separadas: `./start_api.sh` y `./start_gui.sh`.
+
+### Acceder a la aplicación
+
+Abre `http://localhost:7860` en el navegador. La pantalla de acceso pide **usuario y contraseña**: son los que creaste en el paso de instalación. Si respondiste que no a la creación del administrador, créalo ahora:
+```
+venv\Scripts\python.exe -c "from data.db import crear_usuario; crear_usuario('tu_uvus','Tu Nombre','admin','tu_contraseña')"
+```
+
+Si al entrar el desplegable de municipio aparece vacío en la pestaña "Procesar audios", el catálogo NGA no llegó a cargarse — repite ese paso a mano:
+```
+venv\Scripts\python.exe -c "from data.migrar_nga import migrar; migrar()"
+```
+
+<details>
+<summary><strong>Detalles de instalación</strong>: dependencias exactas, modelos TTS opcionales, instalador reforzado, configuración manual de la base de datos</summary>
+
+#### Entorno Python manual
+
+```powershell
+python -m venv venv
+venv\Scripts\Activate.ps1
+pip install --upgrade pip setuptools wheel
+pip install -r requirements.txt
+```
+
+#### Dependencias del `requirements.txt`
+
+```
+fastapi
+uvicorn[standard]
+SQLAlchemy
+python-dotenv
+gradio
+bcrypt
+pydub
+requests
+psycopg2-binary
+python-jose[cryptography]
+python-multipart
+openai-whisper
+```
+
+#### Dependencias opcionales por modelo
+
+**XTTS v2 (Python ≤ 3.11)**:
+```bash
+pip install TTS
+```
+
+**XTTS v2 (Python 3.12, fork Idiap)**:
+```bash
+pip install git+https://github.com/idiap/coqui-ai-TTS
+pip install torch==2.7.1+cpu torchaudio==2.7.1+cpu \
+    --index-url https://download.pytorch.org/whl/cpu
+```
+
+**Piper**:
+```bash
+pip install piper-tts piper-phonemize
+# En el sistema: apt install espeak-ng / choco install espeak-ng
+```
+
+**F5-TTS**:
+```bash
+pip install f5-tts   # requiere CUDA
+```
+
+#### Instalador reforzado para Windows (`install_v2.ps1`)
+
+Alternativa a `install.ps1` pensada para máquinas Windows completamente limpias (sin Python, sin Git, con o sin proxy corporativo): fuerza TLS 1.2, detecta el proxy del sistema (`netsh winhttp`) y lo aplica a `pip`/`git` excluyendo siempre `localhost`, instala Git y Python 3.12 por descarga directa si faltan (sin depender de `winget`, que no está disponible en Windows Server más antiguos), y usa `--trusted-host` como red de seguridad ante proxies con inspección TLS. No sustituye a `install.ps1` — si algo falla en el entorno reforzado, `install.ps1` sigue disponible tal cual como alternativa más simple.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File install_v2.ps1
+```
+
+**Sin usar terminal en absoluto**: `Instalar.exe` e `IniciarApp.exe` son los mismos dos scripts compilados con [ps2exe](https://github.com/MScholtes/PS2EXE) — doble clic y listo, no hace falta abrir PowerShell manualmente (aunque sí se abre una ventana de consola para mostrar el progreso y los prompts interactivos, como la contraseña de PostgreSQL). Si los recompilas tras editar los `.ps1`, recuerda que dentro de un `.exe` compilado `$PSScriptRoot` no se resuelve — ambos scripts ya usan la carpeta del propio ejecutable como alternativa.
+
+#### Configuración manual de la base de datos
+
+`install.ps1`/`install.sh` ya se encargan de esto automáticamente: comprueban `ffmpeg`/`espeak-ng`/`psql`, generan un `JWT_SECRET` aleatorio, crean la base de datos `corpus_tts` (en Linux también fijan la contraseña del rol `postgres` sin pedirla, usando autenticación *peer* local; en Windows piden la contraseña de `postgres` una vez para crearla y crear las tablas), cargan automáticamente los municipios y topónimos del NGA, y ofrecen crear el primer administrador de forma interactiva al final. Lo que sigue es la referencia manual, útil si el instalador no pudo completar algún paso:
+
+```bash
+# En PostgreSQL
+psql -U postgres -c "CREATE DATABASE corpus_tts;"
+
+# Crear tablas (desde la raíz del proyecto con venv activo)
+python -c "from data.db import init_db; init_db()"
+
+# Crear primer administrador
+python -c "
+from data.db import crear_usuario
+crear_usuario('tu_uvus', 'Tu Nombre Completo', 'admin', 'tu_contraseña')
+"
+
+# Cargar topónimos NGA
+python -c "from data.migrar_nga import migrar; migrar()"
+```
+
+#### El fichero `.env`
+
+```ini
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=corpus_tts
+DB_USER=postgres
+DB_PASS=tu_contraseña_segura
+JWT_SECRET=cadena_aleatoria_de_al_menos_32_caracteres
+JWT_MINUTES=480
+API_BASE=http://127.0.0.1:8000
+
+# HF_HOME=D:\otra\ruta          # opcional: sobreescribe .hf_cache/ del proyecto
+# HF_TOKEN=hf_xxxx              # opcional: mayor velocidad de descarga en HuggingFace
+HF_HUB_DISABLE_SYMLINKS_WARNING=1   # evita warning de symlinks en Windows
+```
+
+El instalador ya lo crea automáticamente con un `JWT_SECRET` aleatorio. Si necesitas crearlo o editarlo a mano: texto plano `KEY=VALUE`. En PowerShell usa `New-Item .env` y edítalo con un editor de texto, no con heredoc (`@"..."@`), porque añade caracteres de control que rompen `python-dotenv`.
+
+</details>
+
+---
+
 ## Índice
 
-1. [Motivación y contexto](#1-motivación-y-contexto)
-2. [Arquitectura general](#2-arquitectura-general)
-3. [Estructura de ficheros](#3-estructura-de-ficheros)
-4. [Base de datos](#4-base-de-datos)
-5. [API REST (FastAPI)](#5-api-rest-fastapi)
-6. [Flujo de datos completo](#6-flujo-de-datos-completo)
-7. [Interfaz Gradio](#7-interfaz-gradio)
-8. [Modelos TTS soportados](#8-modelos-tts-soportados)
-9. [Formatos de exportación](#9-formatos-de-exportación)
-10. [Autenticación y roles](#10-autenticación-y-roles)
-11. [Configuración](#11-configuración)
-12. [Instalación](#12-instalación)
-13. [Arranque del sistema](#13-arranque-del-sistema)
-14. [Convención de nombres de archivo](#14-convención-de-nombres-de-archivo)
+1. [Arranque e inicio de sesión](#1-arranque-e-inicio-de-sesión)
+2. [Guía de uso](#2-guía-de-uso)
+3. [Motivación y contexto](#3-motivación-y-contexto)
+4. [Arquitectura general](#4-arquitectura-general)
+5. [Estructura de ficheros](#5-estructura-de-ficheros)
+6. [Base de datos](#6-base-de-datos)
+7. [API REST (FastAPI)](#7-api-rest-fastapi)
+8. [Flujo de datos completo](#8-flujo-de-datos-completo)
+9. [Modelos TTS soportados](#9-modelos-tts-soportados)
+10. [Formatos de exportación](#10-formatos-de-exportación)
+11. [Autenticación y roles](#11-autenticación-y-roles)
+12. [Configuración](#12-configuración)
+13. [Convención de nombres de archivo](#13-convención-de-nombres-de-archivo)
+14. [Migración entre máquinas](#14-migración-entre-máquinas)
 15. [Notas de despliegue](#15-notas-de-despliegue)
 16. [Problemas conocidos y soluciones](#16-problemas-conocidos-y-soluciones)
 
 ---
 
-## 1. Motivación y contexto
+## 1. Arranque e inicio de sesión
+
+Se necesitan **dos procesos separados**: la API REST y la interfaz Gradio. Usa siempre los scripts de arranque incluidos en lugar de lanzar Python directamente: fijan las variables de entorno de HuggingFace **antes** de que Python empiece, evitando conflictos con rutas configuradas a nivel de sistema (p. ej. unidades de red universitarias).
+
+**Terminal 1 — API REST:**
+```powershell
+.\start_api.ps1      # Windows
+./start_api.sh       # Linux / Raspberry Pi
+```
+
+**Terminal 2 — Interfaz Gradio:**
+```powershell
+.\start_gui.ps1      # Windows
+./start_gui.sh       # Linux / Raspberry Pi
+```
+
+En Windows, `arrancar_todo.ps1` (o el ejecutable `IniciarApp.exe`) lanza ambas en sus propias ventanas de una vez.
+
+**Importante**: arranca siempre la API antes que la GUI — la GUI intenta conectar con la API al arrancar para cargar el banner con estadísticas del dataset.
+
+La interfaz queda disponible en `http://localhost:7860`; la API en `http://localhost:8000` (documentación interactiva en `http://localhost:8000/docs`).
+
+### Inicio de sesión
+
+Al abrir `http://localhost:7860`, Gradio muestra una pantalla de acceso que pide **usuario y contraseña** — son las credenciales del usuario administrador que se crean durante la [instalación](#instalación) (o de cualquier otro usuario creado después desde la pestaña "Gestión de usuarios"). No existe ningún fichero de configuración donde escribir estas credenciales: son una cuenta real guardada en la base de datos. Si no tienes ninguna cuenta todavía, créala con:
+```
+venv\Scripts\python.exe -c "from data.db import crear_usuario; crear_usuario('tu_uvus','Tu Nombre','admin','tu_contraseña')"
+```
+
+El login de Gradio llama internamente a `POST /auth/login` y guarda el JWT resultante en `ui/api_client.py` (variable de módulo `_token`), que es lo que la interfaz usa para autenticar sus llamadas a la API en tu nombre.
+
+**Lanzado manual (alternativa)**, si por lo que sea no quieres usar los scripts de arranque:
+```powershell
+venv\Scripts\Activate.ps1
+uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload   # Terminal 1
+python gui_tts_andaluz.py                                    # Terminal 2
+```
+Si el sistema tiene `HUGGINGFACE_HUB_CACHE` apuntando a una unidad no disponible, puede aparecer un warning al arrancar así (ver [Sección 16](#16-problemas-conocidos-y-soluciones)).
+
+---
+
+## 2. Guía de uso
+
+La app se organiza en pestañas, en el mismo orden en el que se usan normalmente durante el flujo de trabajo: desde la bienvenida hasta la exportación del dataset y el entrenamiento del modelo.
+
+### 2.1 Bienvenida
+
+Documentación integrada sobre formatos, modos de copia y estructura de ficheros. Incluye además un formulario de "Cambiar mi contraseña" (llama a `POST /auth/cambiar-password`), disponible para cualquier rol ya que es la única pestaña visible para todos los usuarios independientemente de su rol.
+
+### 2.2 Procesar audios
+
+1. Selección de provincia y municipio (cargados desde el catálogo NGA).
+2. Selección o registro de hablante (código de 2 dígitos dentro del municipio).
+3. Entrada de audio: ruta de carpeta, arrastrar archivos (cualquier formato de `AV_EXTS`) o grabación directa desde el micrófono del navegador.
+4. Procesado automático: conversión WAV → segmentación por silencio → transcripción con Whisper.
+5. Lista de clips generados con sus transcripciones automáticas.
+6. Registro de cada clip en la API (`POST /clips`).
+
+El prompt de Whisper se construye con los topónimos del municipio seleccionado desde la BD (`data/db.py::get_whisper_prompt_municipio`), lo que mejora significativamente el reconocimiento de nombres propios locales.
+
+### 2.3 Revisar transcripciones
+
+1. Carga los clips pendientes (sin corrección) desde `GET /transcripciones/pendientes`.
+2. Reproduce el audio en el navegador.
+3. Muestra la transcripción en un cuadro editable.
+4. Al guardar: `PUT /clips/{id}` → la corrección queda registrada en la BD.
+5. Navegación entre clips con botones Anterior/Siguiente.
+6. Opción de desactivar clips incorregibles (`DELETE /clips/{id}`).
+
+Estado de sesión con `gr.State()` (por sesión de usuario) para evitar conflictos entre revisores que trabajan a la vez en la misma instancia.
+
+### 2.4 Estadísticas
+
+- Tabla por hablante: número de clips, duración total, estado.
+  - `< 10 min` → Insuficiente
+  - `10–30 min` → Limitado
+  - `≥ 30 min` → OK (mínimo recomendado para XTTS)
+- Botón "Generar splits": llama a `POST /splits/generar` (solo admin), asigna train/eval con ratio 0.85.
+- Botón "Vaciar _eliminados/": limpia archivos descartados durante el procesado.
+
+### 2.5 Entrenar
+
+Dos modos seleccionables mediante radio button:
+
+#### Modo Zero-Shot
+
+Usa el modelo base preentrenado sin entrenamiento adicional. Requiere un audio de referencia del hablante (≥ 3 s).
+
+**Fuente de referencia**:
+- *Hablante del dataset*: selector de hablante → selector de TODOS sus clips con transcripción corregida de la BD → previsualización del audio seleccionado, con nombre, duración y transcripción completa de cada clip.
+- *Subir / Grabar*: carga directa de audio externo.
+
+Modelos disponibles en zero-shot: XTTS v2, F5-TTS.
+
+#### Modo Fine-Tuning
+
+Pipeline en 4 pasos (acordeones):
+
+**Paso 1 — Fuente**: qué datos exportar (global / por provincia / por municipio / por hablante), modelo, modo de ejecución (local / servidor remoto).
+
+**Paso 2 — Configuración**: nombre del modelo, épocas, batch size, learning rate. Los rangos se actualizan automáticamente según el modelo:
+
+| Modelo  | Épocas (por defecto) | Rango         | Batch | LR     |
+|---------|-----------------------|---------------|-------|--------|
+| XTTS v2 | 10                    | 1 – 500       | 2     | 5e-6   |
+| Piper   | 6000                  | 1000 – 10000  | 16    | 1e-4   |
+| F5-TTS  | 100                   | 50 – 1000     | 4     | 1e-4   |
+
+**Paso 3 — Entrenamiento**: botón de inicio, log en tiempo real (función generadora con `yield`), progreso vía `gr.Progress()`. Llama internamente a `export_dataset()` y luego al entrenador correspondiente.
+
+**Paso 4 — Probar**: se abre automáticamente al finalizar el entrenamiento. También se puede cargar directamente un modelo ya entrenado en una sesión anterior desde el desplegable "Cargar un modelo ya entrenado" (escanea `exports/modelos/`), sin necesidad de reentrenar. Cuadro de texto → síntesis → reproducción del audio resultante.
+
+Estado de sesión: `gr.State(_default_ft_state())` con campos:
+- `model_code`: `"xtts"` / `"piper"` / `"f5"`
+- `model_dir`: ruta al directorio con el modelo entrenado
+- `onnx_path`: ruta al fichero `.onnx` (Piper únicamente)
+- `trained`: `True` tras un entrenamiento exitoso (o al cargar un modelo ya entrenado)
+
+### 2.6 Exportar
+
+- Selección de formato(s): ljspeech, xtts, piper, f5, commonvoice, csv.
+- Filtros: split (train/eval/todos), por provincia, por municipio, por hablante.
+- Modo de copia: `copy` (recomendado en Windows), `symlink`, `reference`.
+- Nombre de la exportación (crea subdirectorio en `exports/`).
+- Progreso de exportación en tiempo real.
+
+### 2.7 Gestión de usuarios (solo admin)
+
+Solo visible si el usuario que ha iniciado sesión tiene rol `admin`. La visibilidad se decide en un `app.load()` que llama a `GET /auth/me` al cargar la página y oculta la pestaña (`gr.update(visible=False)`) si el rol no es `admin`; los demás roles no llegan a verla.
+
+- **Listado**: tabla con UVUS, nombre, rol y estado (activo/inactivo) de todos los usuarios (`GET /auth/usuarios`).
+- **Crear usuario**: formulario con UVUS, nombre, rol (`recolector` / `revisor` / `admin`) y contraseña con confirmación (`POST /auth/usuarios`). Valida en cliente que las contraseñas coincidan; el servidor valida UVUS único y rol permitido.
+- **Desactivar usuario**: introduce el UVUS y llama a `PATCH /auth/usuarios/{uvus}/desactivar` (*soft delete*: el usuario no puede volver a iniciar sesión, pero su historial de correcciones y clips se conserva).
+
+**Aviso de diseño**: como el token de sesión (`ui/api_client._token`) es una variable global de módulo y no está aislada por usuario (a diferencia del `gr.State()` de la pestaña Revisar), la comprobación de rol asume que solo hay una sesión de administración activa a la vez en la misma instancia del proceso Gradio. Para un despliegue con varios administradores conectados simultáneamente habría que migrar el token a almacenamiento por sesión.
+
+---
+
+## 3. Motivación y contexto
 
 El español andaluz no es un único acento sino un conjunto de variedades dialectales distribuidas por provincias y municipios. Los modelos TTS genéricos entrenados con español peninsular estándar no capturan estas variantes. El objetivo de este TFG es:
 
@@ -38,7 +314,7 @@ La preservación dialectal es la motivación principal: el acento andaluz tiene 
 
 ---
 
-## 2. Arquitectura general
+## 4. Arquitectura general
 
 ```
 ┌──────────────────────────────────────────────────────────┐
@@ -71,7 +347,7 @@ Los dos procesos (Gradio + FastAPI) son independientes y se lanzan por separado.
 
 ---
 
-## 3. Estructura de ficheros
+## 5. Estructura de ficheros
 
 ```
 Andalucia/
@@ -153,7 +429,7 @@ Andalucia/
 
 ---
 
-## 4. Base de datos
+## 6. Base de datos
 
 ### Diagrama ER simplificado
 
@@ -213,7 +489,7 @@ Los topónimos se usan como prompt de Whisper para mejorar el reconocimiento de 
 
 #### `hablante`
 | columna      | tipo         | descripción                               |
-|--------------|--------------|-------------------------------------------|
+|--------------|--------------|--------------------------------------------|
 | id           | INTEGER PK   |                                           |
 | municipio_id | FK municipio |                                           |
 | usuario_id   | FK usuario   | Usuario asignado al hablante              |
@@ -268,7 +544,7 @@ Si PostgreSQL no está disponible (desarrollo local, CI), `data/db.py` crea auto
 
 ---
 
-## 5. API REST (FastAPI)
+## 7. API REST (FastAPI)
 
 La API arranca en `http://localhost:8000`. Documentación interactiva disponible en `/docs` (Swagger UI) y `/redoc`.
 
@@ -366,9 +642,9 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/clips
 
 ---
 
-## 6. Flujo de datos completo
+## 8. Flujo de datos completo
 
-### 6.1 Procesado de audio
+### 8.1 Procesado de audio
 
 ```
 Audio original (mp3, ogg, mp4, mkv, wav, etc.)
@@ -398,7 +674,7 @@ Parámetros de segmentación (en `config.py`):
 | `MIN_SILENCE_MS` | 400 ms | Silencio mínimo para considerar un corte      |
 | `KEEP_SILENCE_MS`| 100 ms | Padding de silencio a mantener en cada segmento |
 
-### 6.2 Revisión de transcripciones
+### 8.2 Revisión de transcripciones
 
 ```
 Revisor (pestaña "Revisar transcripciones")
@@ -415,7 +691,7 @@ BD: clip.transcripcion = nuevo texto
 
 **Importante**: el CSV local (`metadata.csv`) NUNCA se actualiza con correcciones. El CSV contiene siempre la transcripción original de Whisper. La fuente de verdad para exportaciones es siempre `clip.transcripcion` en la BD.
 
-### 6.3 Exportación
+### 8.3 Exportación
 
 ```
 export_dataset(source_csv, out_base, formats, copy_mode, split, hablante_prefix)
@@ -436,104 +712,7 @@ export_dataset(source_csv, out_base, formats, copy_mode, split, hablante_prefix)
 
 ---
 
-## 7. Interfaz Gradio
-
-La app Gradio corre en `http://localhost:7860` con autenticación integrada. El login de Gradio llama internamente a `POST /auth/login` y almacena el JWT en `ui/api_client.py` (variable de módulo `_token`). La variable de entorno `API_BASE` controla a qué instancia de la API apunta la GUI.
-
-### Pestaña: Bienvenida
-
-Documentación integrada sobre formatos, modos de copia y estructura de ficheros. Incluye además un formulario de "Cambiar mi contraseña" (llama a `POST /auth/cambiar-password`), disponible para cualquier rol ya que es la única pestaña visible para todos los usuarios independientemente de su rol.
-
-### Pestaña: Procesar audios
-
-1. Selección de provincia y municipio (cargados desde el catálogo NGA)
-2. Selección o registro de hablante (código de 2 dígitos dentro del municipio)
-3. Entrada de audio: ruta de carpeta, arrastrar archivos (cualquier formato de `AV_EXTS`) o grabación directa desde el micrófono del navegador
-4. Procesado automático: conversión WAV → segmentación por silencio → Whisper
-5. Lista de clips generados con transcripciones Whisper
-6. Registro de cada clip en la API (POST /clips)
-
-El prompt de Whisper se construye con topónimos del municipio seleccionado desde la BD (`data/db.py::get_whisper_prompt_municipio`), lo que mejora significativamente el reconocimiento de nombres propios locales.
-
-### Pestaña: Revisar transcripciones
-
-1. Carga clips pendientes (sin correcciones) desde `GET /transcripciones/pendientes`
-2. Reproduce audio en el navegador
-3. Muestra transcripción editable
-4. Al guardar: `PUT /clips/{id}` → corrección registrada en BD
-5. Navegación entre clips con botones Anterior/Siguiente
-6. Opción de desactivar clips incorregibles (`DELETE /clips/{id}`)
-
-Estado de sesión con `gr.State()` (por sesión de usuario) para evitar conflictos entre usuarios concurrentes en la misma instancia.
-
-### Pestaña: Estadísticas
-
-- Tabla por hablante: número de clips, duración total, estado
-  - `< 10 min` → Insuficiente
-  - `10–30 min` → Limitado
-  - `≥ 30 min` → OK (mínimo recomendado para XTTS)
-- Botón "Generar splits": llama `POST /splits/generar` (solo admin), asigna train/eval con ratio 0.85
-- Botón "Vaciar _eliminados/": limpia archivos descartados durante el procesado
-
-### Pestaña: Entrenar
-
-Dos modos seleccionables mediante radio button:
-
-#### Modo Zero-Shot
-
-Usa el modelo base preentrenado sin entrenamiento adicional. Requiere un audio de referencia del hablante (≥3 s).
-
-**Fuente de referencia**:
-- *Hablante del dataset*: selector de hablante → selector de TODOS sus clips con transcripción corregida de BD → preview del audio seleccionado. Muestra nombre, duración y transcripción completa de cada clip.
-- *Subir / Grabar*: carga directa de audio externo.
-
-Modelos disponibles en zero-shot: XTTS v2, F5-TTS.
-
-#### Modo Fine-Tuning
-
-Pipeline en 4 pasos (acordeones):
-
-**Paso 1 — Fuente**: qué datos exportar (global / por provincia / por municipio / por hablante), modelo, modo de ejecución (local / servidor remoto).
-
-**Paso 2 — Configuración**: nombre del modelo, epochs, batch size, learning rate. Los rangos se actualizan automáticamente según el modelo:
-
-| Modelo  | Epochs (default) | Rango         | Batch | LR     |
-|---------|-----------------|---------------|-------|--------|
-| XTTS v2 | 10              | 1 – 500       | 2     | 5e-6   |
-| Piper   | 6000            | 1000 – 10000  | 16    | 1e-4   |
-| F5-TTS  | 100             | 50 – 1000     | 4     | 1e-4   |
-
-**Paso 3 — Entrenamiento**: botón de inicio, log en tiempo real (función generadora con `yield`), progreso via `gr.Progress()`. Llama internamente a `export_dataset()` y luego al entrenador correspondiente.
-
-**Paso 4 — Probar**: se abre automáticamente al finalizar el entrenamiento (cadena `.then(_abrir_paso4_si_entrenado)`). Cuadro de texto → síntesis → reproducción de audio resultante.
-
-Estado de sesión: `gr.State(_default_ft_state())` con campos:
-- `model_code`: `"xtts"` / `"piper"` / `"f5"`
-- `model_dir`: ruta al directorio con el modelo entrenado
-- `onnx_path`: ruta al fichero `.onnx` (Piper únicamente)
-- `trained`: `True` tras un entrenamiento exitoso
-
-### Pestaña: Exportar
-
-- Selección de formato(s): ljspeech, xtts, piper, f5, commonvoice, csv
-- Filtros: split (train/eval/todos), por provincia, por municipio, por hablante
-- Modo de copia: `copy` (recomendado en Windows), `symlink`, `reference`
-- Nombre de la exportación (crea subdirectorio en `exports/`)
-- Progreso de exportación en tiempo real
-
-### Pestaña: Gestión de usuarios (solo admin)
-
-Solo visible si el usuario que ha iniciado sesión tiene rol `admin`. La visibilidad se decide en un `app.load()` que llama a `GET /auth/me` al cargar la página y oculta la pestaña (`gr.update(visible=False)`) si el rol no es `admin`; los demás roles no llegan a verla.
-
-- **Listado**: tabla con UVUS, nombre, rol y estado (activo/inactivo) de todos los usuarios (`GET /auth/usuarios`).
-- **Crear usuario**: formulario con UVUS, nombre, rol (`recolector` / `revisor` / `admin`) y contraseña con confirmación (`POST /auth/usuarios`). Valida en cliente que las contraseñas coincidan; el servidor valida UVUS único y rol permitido.
-- **Desactivar usuario**: introduce el UVUS y llama a `PATCH /auth/usuarios/{uvus}/desactivar` (*soft delete*: el usuario no puede volver a iniciar sesión, pero su historial de correcciones y clips se conserva).
-
-**Aviso de diseño**: como el token de sesión (`ui/api_client._token`) es una variable global de módulo y no está aislada por usuario (a diferencia del `gr.State()` de la pestaña Revisar), la comprobación de rol asume que solo hay una sesión de administración activa a la vez en la misma instancia del proceso Gradio. Para un despliegue con varios administradores conectados simultáneamente habría que migrar el token a almacenamiento por sesión.
-
----
-
-## 8. Modelos TTS soportados
+## 9. Modelos TTS soportados
 
 ### XTTS v2 (Coqui / Idiap fork)
 
@@ -579,7 +758,7 @@ Zero-shot y fine-tuning. Requiere GPU (CUDA). La implementación actual es un st
 
 ---
 
-## 9. Formatos de exportación
+## 10. Formatos de exportación
 
 Todos los formatos se generan por `data/export.py`. La función `_enrich_rows_from_db()` garantiza que se usen siempre las transcripciones corregidas de la BD.
 
@@ -622,17 +801,17 @@ Con cabecera. Para procesamiento personalizado o modelos no listados.
 
 ---
 
-## 10. Autenticación y roles
+## 11. Autenticación y roles
 
 ### Roles
 
 | rol         | permisos                                                        |
-|-------------|-----------------------------------------------------------------|
+|-------------|-------------------------------------------------------------------|
 | recolector  | Subir audios, registrar clips, ver clips propios                |
 | revisor     | Todo lo anterior + corregir transcripciones de cualquier clip y desactivarlo (soft delete) |
 | admin       | Todo lo anterior + gestionar usuarios, generar splits, borrar clips |
 
-La gestión de usuarios (crear, listar, desactivar) es accesible tanto por la API (`/auth/usuarios`, ver Sección 5) como desde la pestaña "Gestión de usuarios" de la interfaz Gradio (ver Sección 7), visible únicamente para el rol `admin`.
+La gestión de usuarios (crear, listar, desactivar) es accesible tanto por la API (`/auth/usuarios`, ver [Sección 7](#7-api-rest-fastapi)) como desde la pestaña "Gestión de usuarios" de la interfaz Gradio (ver [Sección 2.7](#27-gestión-de-usuarios-solo-admin)), visible únicamente para el rol `admin`.
 
 ### JWT
 
@@ -660,26 +839,19 @@ def endpoint(user: CurrentUser = None):       # CORRECTO
 
 ---
 
-## 11. Configuración
+## 12. Configuración
 
 ### `.env` (raíz del proyecto)
 
-```ini
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=corpus_tts
-DB_USER=postgres
-DB_PASS=tu_contraseña_segura
-JWT_SECRET=cadena_aleatoria_de_al_menos_32_caracteres
-JWT_MINUTES=480
-API_BASE=http://127.0.0.1:8000
+Ver [detalles de instalación](#instalación) para el contenido completo del fichero. Resumen de las variables:
 
-# HF_HOME=D:\otra\ruta          # opcional: sobreescribe .hf_cache/ del proyecto
-# HF_TOKEN=hf_xxxx              # opcional: mayor velocidad de descarga en HuggingFace
-HF_HUB_DISABLE_SYMLINKS_WARNING=1   # evita warning de symlinks en Windows
-```
-
-Crear este fichero como texto plano `KEY=VALUE`. En PowerShell usar `New-Item .env` y editar con un editor de texto, no con heredoc (`@"..."@`) porque añade caracteres de control que rompen `python-dotenv`.
+| variable | descripción |
+|---|---|
+| `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASS` | Conexión a PostgreSQL |
+| `JWT_SECRET` | Clave de firma de los tokens — cambiar antes de producción |
+| `JWT_MINUTES` | Duración de la sesión (por defecto 480 min) |
+| `API_BASE` | URL de la API que usa la GUI para conectarse |
+| `HF_HOME` / `HF_TOKEN` | Opcionales: caché y autenticación de HuggingFace |
 
 ### Caché de modelos HuggingFace
 
@@ -689,7 +861,7 @@ La lógica de selección de ruta en `gui_tts_andaluz.py` y `core/train.py` sigue
 1. `HF_HOME` en `.env` — si existe y su unidad está disponible
 2. `.hf_cache/` dentro del proyecto — fallback portable
 
-Si en el sistema hay configurada una variable de entorno `HUGGINGFACE_HUB_CACHE` (p.ej. apuntando a una unidad de red), los scripts de arranque la sobreescriben a nivel de proceso antes de que Python empiece.
+Si en el sistema hay configurada una variable de entorno `HUGGINGFACE_HUB_CACHE` (p. ej. apuntando a una unidad de red), los scripts de arranque la sobreescriben a nivel de proceso antes de que Python empiece.
 
 ### `config.py` — constantes de audio
 
@@ -706,118 +878,7 @@ Si en el sistema hay configurada una variable de entorno `HUGGINGFACE_HUB_CACHE`
 
 ---
 
-## 12. Instalación
-
-### Requisitos del sistema
-
-- Python 3.10 o 3.11 (recomendado; ver nota 3.12 en sección 16)
-- PostgreSQL 14+
-- ffmpeg en PATH
-- espeak-ng (solo para Piper)
-- CUDA (solo para F5-TTS y XTTS con GPU)
-
-### Entorno Python
-
-```powershell
-python -m venv venv
-venv\Scripts\Activate.ps1
-pip install --upgrade pip setuptools wheel
-pip install -r requirements.txt
-```
-
-### Dependencias del `requirements.txt`
-
-```
-fastapi
-uvicorn[standard]
-SQLAlchemy
-python-dotenv
-gradio
-bcrypt
-pydub
-requests
-psycopg2-binary
-python-jose[cryptography]
-python-multipart
-openai-whisper
-```
-
-### Dependencias opcionales por modelo
-
-**XTTS v2 (Python ≤ 3.11)**:
-```bash
-pip install TTS
-```
-
-**XTTS v2 (Python 3.12, fork Idiap)**:
-```bash
-pip install git+https://github.com/idiap/coqui-ai-TTS
-pip install torch==2.7.1+cpu torchaudio==2.7.1+cpu \
-    --index-url https://download.pytorch.org/whl/cpu
-```
-
-**Piper**:
-```bash
-pip install piper-tts piper-phonemize
-# En el sistema: apt install espeak-ng / choco install espeak-ng
-```
-
-**F5-TTS**:
-```bash
-pip install f5-tts   # requiere CUDA
-```
-
-### Configuración de la base de datos
-
-`install.ps1`/`install.sh` ya se encargan de esto automáticamente: comprueban `ffmpeg`/`espeak-ng`/`psql`, generan un `JWT_SECRET` aleatorio, crean la base de datos `corpus_tts` (en Linux también fijan la contraseña del rol `postgres` sin pedirla, usando autenticación *peer* local; en Windows piden la contraseña de `postgres` una vez para crearla y crear las tablas), y ofrecen crear el primer administrador de forma interactiva al final. Lo que sigue es la referencia manual, útil si el instalador no pudo completar algún paso:
-
-```bash
-# En PostgreSQL
-psql -U postgres -c "CREATE DATABASE corpus_tts;"
-
-# Crear tablas (desde la raíz del proyecto con venv activo)
-python -c "from data.db import init_db; init_db()"
-
-# Crear primer administrador
-python -c "
-from data.db import crear_usuario
-crear_usuario('tu_uvus', 'Tu Nombre Completo', 'admin', 'tu_contraseña')
-"
-
-# Cargar topónimos NGA
-python data/migrar_nga.py
-```
-
----
-
-## 13. Arranque del sistema
-
-Se necesitan **dos terminales separadas**. Usar los scripts de arranque incluidos en lugar de lanzar Python directamente: los scripts fijan las variables de entorno de HuggingFace **antes** de que Python empiece, evitando conflictos con rutas configuradas a nivel de sistema (p.ej. unidades de red universitarias).
-
-**Terminal 1 — API REST:**
-```powershell
-.\start_api.ps1
-```
-
-**Terminal 2 — Interfaz Gradio:**
-```powershell
-.\start_gui.ps1
-```
-
-La interfaz estará disponible en `http://localhost:7860`. La API en `http://localhost:8000`. La documentación de la API en `http://localhost:8000/docs`.
-
-**Lanzado manual (alternativa):** activar el venv y ejecutar directamente — el código también lo gestiona, pero si el sistema tiene `HUGGINGFACE_HUB_CACHE` apuntando a una unidad no disponible puede aparecer un warning al arrancar:
-```powershell
-venv\Scripts\Activate.ps1
-uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload   # Terminal 1
-python gui_tts_andaluz.py                                    # Terminal 2
-```
-
-**Nota**: lanzar la API antes que la GUI. La GUI intenta conectar a la API al arrancar para cargar el banner con estadísticas del dataset.
-
----
-
-## 14. Convención de nombres de archivo
+## 13. Convención de nombres de archivo
 
 Los archivos WAV siguen el patrón:
 
@@ -853,7 +914,7 @@ El código de la primera parte del nombre de archivo permite filtrar por hablant
 
 ---
 
-## 15. Migración entre máquinas
+## 14. Migración entre máquinas
 
 ### Qué transferir
 
@@ -864,7 +925,7 @@ El código de la primera parte del nombre de archivo permite filtrar por hablant
 | Dataset de audio | `rsync` / pendrive / scp | Carpeta `dataset/` — puede ser grande |
 | Modelos HF (XTTS) | Copiar `.hf_cache/` | ~1.8 GB; si no se copia, se vuelven a descargar |
 | `.env` | Copiar y editar | Ajustar credenciales de BD de la nueva máquina |
-| `NGA_TOPONIMOS_*.csv` | Incluido en el código | Versión reducida a datos públicos de municipio (ver Sección 4) — sustituye por tu catálogo NGA completo si lo tienes |
+| `NGA_TOPONIMOS_*.csv` | Incluido en el código | Versión reducida a datos públicos de municipio (ver [Sección 6](#6-base-de-datos)) — sustituye por tu catálogo NGA completo si lo tienes |
 
 ### Procedimiento completo
 
@@ -921,7 +982,7 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 
 ---
 
-## 16. Notas de despliegue
+## 15. Notas de despliegue
 
 ### Windows (desarrollo y producción local)
 
@@ -948,6 +1009,25 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 ---
 
 ## 16. Problemas conocidos y soluciones
+
+### El desplegable de municipio aparece vacío en "Procesar audios"
+
+**Causa**: la base de datos no tiene municipios ni topónimos cargados porque `data/migrar_nga.py` no se ha ejecutado. Antes de que los instaladores lo hicieran automáticamente, este era un paso manual fácil de saltarse.
+
+**Solución**:
+```
+venv\Scripts\python.exe -c "from data.migrar_nga import migrar; migrar()"
+```
+Con `install.ps1`/`install.sh`/`install_v2.ps1` actuales este paso ya se ejecuta solo durante la instalación; solo hace falta repetirlo a mano si se instaló con una versión antigua del script, si la base de datos se recreó desde cero después, o si el paso automático avisó de un fallo durante la instalación.
+
+### No sé dónde introducir el usuario y la contraseña
+
+**Causa**: no hay ningún fichero de configuración donde escribir las credenciales — se crean como cuenta de usuario en la base de datos, normalmente al aceptar la pregunta "¿Crear ahora el primer usuario administrador?" que hace el instalador.
+
+**Solución**: el usuario y la contraseña se introducen en la propia pantalla de acceso de Gradio, al abrir `http://localhost:7860` en el navegador. Si nunca se creó un administrador (se respondió "N" durante la instalación, o se instaló antes de que el instalador lo preguntara), créalo con:
+```
+venv\Scripts\python.exe -c "from data.db import crear_usuario; crear_usuario('tu_uvus','Tu Nombre','admin','tu_contraseña')"
+```
 
 ### Symlinks warning en Windows (`HF_HUB_DISABLE_SYMLINKS_WARNING`)
 

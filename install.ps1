@@ -104,16 +104,21 @@ if (-not (Test-Path $EnvFile)) {
     Write-Host "[...] Creando .env..."
     $Chars = (48..57) + (65..90) + (97..122)
     $JwtSecret = -join ((1..48) | ForEach-Object { [char]($Chars | Get-Random) })
-    @"
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=corpus_tts
-DB_USER=postgres
-DB_PASS=CAMBIA_ESTO
-JWT_SECRET=$JwtSecret
-JWT_MINUTES=480
-HF_HUB_DISABLE_SYMLINKS_WARNING=1
-"@ | Out-File -FilePath $EnvFile -Encoding utf8
+    # Sin here-string deliberadamente: si este fichero se ha extraido de git
+    # con final de linea LF (segun la configuracion de core.autocrlf de cada
+    # maquina), Windows PowerShell 5.1 puede no reconocer el cierre "@ del
+    # here-string y da errores de parseo en cascada en el resto del script.
+    $EnvLines = @(
+        "DB_HOST=localhost",
+        "DB_PORT=5432",
+        "DB_NAME=corpus_tts",
+        "DB_USER=postgres",
+        "DB_PASS=CAMBIA_ESTO",
+        "JWT_SECRET=$JwtSecret",
+        "JWT_MINUTES=480",
+        "HF_HUB_DISABLE_SYMLINKS_WARNING=1"
+    )
+    $EnvLines | Set-Content -Path $EnvFile -Encoding utf8
     Write-Host "[OK] .env creado con un JWT_SECRET aleatorio ya generado"
     Write-Host "[AVISO] Edita DB_PASS en .env con la contraseña real de tu usuario postgres antes de continuar"
 } else {
@@ -160,6 +165,21 @@ try {
     Write-Host "[AVISO] No se pudo conectar a PostgreSQL. Revisa .env y ejecuta cuando esté listo:"
     Write-Host "        venv\Scripts\python.exe -c `"from data.db import init_db; init_db()`""
     $DbReady = $false
+}
+
+# 11.5. Cargar topónimos NGA (municipios/provincias en BD; sin esto los
+#       desplegables de "Procesar audios" quedan vacíos y no se puede subir audio)
+if ($DbReady) {
+    Write-Host ""
+    Write-Host "[...] Cargando municipios y topónimos del NGA en la base de datos..."
+    try {
+        & $Python -c "from data.migrar_nga import migrar; migrar()"
+        Write-Host "[OK] Municipios y topónimos cargados"
+    } catch {
+        Write-Host "[AVISO] No se pudo cargar el NGA. Sin este paso los desplegables de municipio"
+        Write-Host "        quedarán vacíos. Ejecútalo manualmente cuando la BD esté lista:"
+        Write-Host "        venv\Scripts\python.exe -c `"from data.migrar_nga import migrar; migrar()`""
+    }
 }
 
 # 12. Crear el primer usuario administrador (opcional, interactivo)

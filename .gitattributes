@@ -1,0 +1,9 @@
+# Normaliza los finales de línea al hacer checkout, independientemente del
+# core.autocrlf de cada máquina. Sin esto, un .ps1 con final de línea LF puede
+# dar errores de parseo en cascada en Windows PowerShell 5.1 (los here-strings
+# @"..."@ no siempre reconocen su cierre si el fichero no tiene CRLF nativo).
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+*.sh  text eol=lf

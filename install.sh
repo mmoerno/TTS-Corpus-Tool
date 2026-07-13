@@ -142,6 +142,19 @@ else
     echo "        $PYTHON -c \"from data.db import init_db; init_db()\""
 fi
 
+# 11.5. Cargar topónimos NGA (municipios/provincias en BD; sin esto los
+#       desplegables de "Procesar audios" quedan vacíos y no se puede subir audio)
+if [ "$DB_READY" = true ]; then
+    echo "[...] Cargando municipios y topónimos del NGA en la base de datos..."
+    if "$PYTHON" -c "from data.migrar_nga import migrar; migrar()" 2>/dev/null; then
+        echo "[OK] Municipios y topónimos cargados"
+    else
+        echo "[AVISO] No se pudo cargar el NGA. Sin este paso los desplegables de municipio"
+        echo "        quedarán vacíos. Ejecútalo manualmente cuando la BD esté lista:"
+        echo "        $PYTHON -c \"from data.migrar_nga import migrar; migrar()\""
+    fi
+fi
+
 # 12. Crear el primer usuario administrador (opcional, interactivo)
 if [ "$DB_READY" = true ]; then
     echo ""

@@ -17,7 +17,10 @@ python-multipart==0.0.32
 openai-whisper==20250625
 huggingface_hub>=1.2.0
 # transformers se instala junto con TTS (ver sección TTS más abajo)
-numpy==2.4.6
+# Rango en vez de versión exacta: numpy>=2.3 exige Python>=3.11, lo que rompe
+# la instalación en Python 3.10 (soportado, ver README); 2.4.6 concretamente
+# puede no estar publicado para todas las plataformas.
+numpy>=1.26,<2.3
 
 # ============================================================
 # PyTorch — instalar POR SEPARADO según plataforma:
