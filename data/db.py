@@ -245,9 +245,38 @@ Index("idx_correccion_usuario",  Correccion.usuario_id)
 # Utilidades
 # ---------------------------------------------------------------------------
 
+def _migrar_columnas_municipio():
+    """
+    Autocorrección de esquema: municipio.latitud/longitud/altitud (nunca
+    poblados, y conceptualmente incorrectos: el NGA usa coordenadas UTM
+    proyectadas, no geográficas) se renombraron a coordenada_x/coordenada_y.
+    create_all() no altera tablas ya existentes, así que cualquier base de
+    datos creada antes de este cambio necesita este ajuste una sola vez.
+    """
+    from sqlalchemy import inspect, text
+    try:
+        insp = inspect(engine)
+        if "municipio" not in insp.get_table_names():
+            return
+        columnas = {c["name"] for c in insp.get_columns("municipio")}
+        if "latitud" not in columnas and "longitud" not in columnas and "altitud" not in columnas:
+            return
+        with engine.begin() as conn:
+            if "latitud" in columnas and "coordenada_x" not in columnas:
+                conn.execute(text("ALTER TABLE municipio RENAME COLUMN latitud TO coordenada_x"))
+            if "longitud" in columnas and "coordenada_y" not in columnas:
+                conn.execute(text("ALTER TABLE municipio RENAME COLUMN longitud TO coordenada_y"))
+            if "altitud" in columnas:
+                conn.execute(text("ALTER TABLE municipio DROP COLUMN altitud"))
+        print(" + Esquema de municipio migrado: latitud/longitud/altitud -> coordenada_x/coordenada_y")
+    except Exception as e:
+        print(f" ! No se pudo migrar automáticamente el esquema de municipio: {e}")
+
+
 def init_db():
     """Crea todas las tablas si no existen. Seguro de llamar múltiples veces."""
     Base.metadata.create_all(bind=engine)
+    _migrar_columnas_municipio()
     print(f" + Base de datos inicializada: {engine.url}")
 
 
