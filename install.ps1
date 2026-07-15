@@ -118,7 +118,11 @@ function Install-PipPackage {
     # paso posterior (incluida la creacion de .env) nunca llega a ejecutarse.
     try {
         & $Python -m pip install @PipArgs --quiet
-    } catch {}
+    } catch {
+        # No dejar el catch vacio: silenciaria el mensaje real de pip
+        # (la razon exacta del fallo) sin motivo, justo cuando mas hace falta.
+        Write-Host $_.Exception.Message
+    }
     if ($LASTEXITCODE -ne 0) {
         Write-Host "[ERROR] Fallo instalando: $Description. Revisa el mensaje de pip mas arriba."
         Read-Host "Pulsa Enter para cerrar esta ventana"
