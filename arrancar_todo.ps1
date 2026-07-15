@@ -19,8 +19,14 @@ if ($PSScriptRoot) {
 $ProxyGuard = "`$env:NO_PROXY = 'localhost,127.0.0.1,0.0.0.0'; `$env:no_proxy = 'localhost,127.0.0.1,0.0.0.0'"
 
 Write-Host "Arrancando API en una ventana nueva..."
+# -ExecutionPolicy Bypass es necesario aqui tambien: cada ventana nueva es un
+# proceso powershell.exe distinto que NO hereda la politica de ejecucion con
+# la que se lanzo este script, aunque el usuario ya haya usado Bypass antes.
+# Sin esto, Activate.ps1/start_api.ps1/start_gui.ps1 fallan dentro de la
+# ventana nueva con "la ejecucion de scripts esta deshabilitada en este
+# sistema", incluso si arrancar_todo.ps1 se ejecuto correctamente.
 Start-Process powershell -ArgumentList @(
-    "-NoExit", "-Command",
+    "-ExecutionPolicy", "Bypass", "-NoExit", "-Command",
     "cd `"$ProjectRoot`"; $ProxyGuard; .\venv\Scripts\Activate.ps1; .\start_api.ps1"
 )
 
@@ -28,7 +34,7 @@ Start-Sleep -Seconds 3
 
 Write-Host "Arrancando GUI en otra ventana nueva..."
 Start-Process powershell -ArgumentList @(
-    "-NoExit", "-Command",
+    "-ExecutionPolicy", "Bypass", "-NoExit", "-Command",
     "cd `"$ProjectRoot`"; $ProxyGuard; .\venv\Scripts\Activate.ps1; .\start_gui.ps1"
 )
 
