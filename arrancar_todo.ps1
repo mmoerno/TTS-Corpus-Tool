@@ -1,6 +1,19 @@
 # arrancar_todo.ps1 — Lanza la API y la GUI en dos ventanas de PowerShell separadas
 #   powershell -ExecutionPolicy Bypass -File arrancar_todo.ps1
 
+# Si se hace doble clic en el .exe compilado, la ventana de consola que abre
+# ps2exe se cierra sola en cuanto el proceso termina — con un error o sin el.
+# Sin este "trap", un fallo inesperado cerraria la ventana antes de que se
+# pudiera leer el mensaje. exit 1 dentro del trap termina el proceso de forma
+# predecible tras pausar.
+trap {
+    Write-Host ""
+    Write-Host "[ERROR] Ha ocurrido un error inesperado:"
+    Write-Host $_.Exception.Message
+    Write-Host ""
+    Read-Host "Pulsa Enter para cerrar esta ventana"
+    exit 1
+}
 
 # $PSScriptRoot no se resuelve dentro de un .exe compilado con ps2exe (se
 # queda vacio); en ese caso usamos la carpeta del propio ejecutable.

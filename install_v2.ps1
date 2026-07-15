@@ -14,6 +14,20 @@
 
 $ErrorActionPreference = "Stop"
 
+# Si se hace doble clic en el .exe compilado, la ventana de consola que abre
+# ps2exe se cierra sola en cuanto el proceso termina — con un error o sin el.
+# Sin este "trap", un fallo inesperado no capturado por los try/catch de mas
+# abajo cerraria la ventana antes de que se pudiera leer el mensaje. exit 1
+# dentro del trap termina el proceso de forma predecible tras pausar.
+trap {
+    Write-Host ""
+    Write-Host "[ERROR] Ha ocurrido un error inesperado:"
+    Write-Host $_.Exception.Message
+    Write-Host ""
+    Read-Host "Pulsa Enter para cerrar esta ventana"
+    exit 1
+}
+
 # $PSScriptRoot no se resuelve dentro de un .exe compilado con ps2exe (se
 # queda vacio); en ese caso usamos la carpeta del propio ejecutable.
 if ($PSScriptRoot) {
@@ -81,6 +95,7 @@ if (-not $GitCmd) {
         Write-Host "[OK] Git instalado"
     } catch {
         Write-Error "No se pudo instalar Git automaticamente. Instalalo manualmente desde git-scm.com/download/win y vuelve a ejecutar este script."
+        Read-Host "Pulsa Enter para cerrar esta ventana"
         exit 1
     }
 } else {
@@ -194,6 +209,7 @@ function Install-PipPackage {
     } catch {}
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Fallo instalando: $Description (pip args: $PipArgs). Revisa el mensaje de pip mas arriba."
+        Read-Host "Pulsa Enter para cerrar esta ventana"
         exit 1
     }
     Write-Host "[OK] $Description"
@@ -360,3 +376,5 @@ Write-Host ""
 Write-Host "O por separado:"
 Write-Host "  .\start_api.ps1"
 Write-Host "  .\start_gui.ps1"
+Write-Host ""
+Read-Host "Pulsa Enter para cerrar esta ventana"

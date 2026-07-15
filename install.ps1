@@ -4,6 +4,20 @@
 
 $ErrorActionPreference = "Stop"
 
+# Si se hace doble clic en el .exe compilado, la ventana de consola que abre
+# ps2exe se cierra sola en cuanto el proceso termina — con un error o sin el.
+# Sin este "trap", un fallo inesperado no capturado por los try/catch de mas
+# abajo cerraria la ventana antes de que se pudiera leer el mensaje. exit 1
+# dentro del trap termina el proceso de forma predecible tras pausar.
+trap {
+    Write-Host ""
+    Write-Host "[ERROR] Ha ocurrido un error inesperado:"
+    Write-Host $_.Exception.Message
+    Write-Host ""
+    Read-Host "Pulsa Enter para cerrar esta ventana"
+    exit 1
+}
+
 # $PSScriptRoot no se resuelve dentro de un .exe compilado con ps2exe (se
 # queda vacio); en ese caso usamos la carpeta del propio ejecutable. Sin
 # esto, Instalar.exe crea el venv e instala los paquetes en una ruta
@@ -28,6 +42,7 @@ Write-Host ""
 $PythonCmd = (Get-Command python -ErrorAction SilentlyContinue)
 if (-not $PythonCmd) {
     Write-Error "Python no encontrado. Instala Python 3.10-3.12 desde python.org"
+    Read-Host "Pulsa Enter para cerrar esta ventana"
     exit 1
 }
 $PyVer = python --version 2>&1
@@ -38,6 +53,7 @@ if (-not $PyVerNum -or [version]$PyVerNum -lt [version]"3.10" -or [version]$PyVe
     Write-Host "        Instala una de esas versiones desde python.org y vuelve a ejecutar este script."
     Write-Host "        Si tienes varias versiones instaladas en paralelo, usa: py -3.11 -m venv venv"
     Write-Host "        (o usa install_v2.ps1, que instala Python 3.12 automaticamente si falta)."
+    Read-Host "Pulsa Enter para cerrar esta ventana"
     exit 1
 }
 Write-Host "[OK] $PyVer"
@@ -105,6 +121,7 @@ function Install-PipPackage {
     } catch {}
     if ($LASTEXITCODE -ne 0) {
         Write-Host "[ERROR] Fallo instalando: $Description. Revisa el mensaje de pip mas arriba."
+        Read-Host "Pulsa Enter para cerrar esta ventana"
         exit 1
     }
     Write-Host "[OK] $Description"
@@ -284,3 +301,5 @@ if (-not $FfmpegCmd) { Write-Host "  - Instala ffmpeg (ver aviso arriba)" }
 if (-not $DbReady)    { Write-Host "  - Revisa .env y crea la base de datos manualmente" }
 Write-Host "  1. Arranca la API:  .\start_api.ps1"
 Write-Host "  2. Arranca la GUI:  .\start_gui.ps1"
+Write-Host ""
+Read-Host "Pulsa Enter para cerrar esta ventana"
