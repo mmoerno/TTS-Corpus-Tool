@@ -240,6 +240,23 @@ if (-not (Test-Path $EnvFile)) {
     Write-Host "     Si no tienes PostgreSQL, no hace falta tocar nada mas: caera a SQLite local."
 } else {
     Write-Host "[OK] .env ya existe"
+    # Un .env de un intento anterior (interrumpido, o creado a mano copiando
+    # .env.example) puede no traer JWT_SECRET, o traerlo vacio/con el valor
+    # de plantilla: la API rechaza arrancar en ese caso (api/auth.py). Se
+    # repara aqui en vez de limitarse a comprobar que el fichero existe.
+    $ExistingJwtLine = Get-Content $EnvFile | Where-Object { $_ -match '^JWT_SECRET=(.*)$' } | Select-Object -Last 1
+    $ExistingJwtValue = if ($ExistingJwtLine) { $ExistingJwtLine -replace '^JWT_SECRET=', '' } else { "" }
+    if ([string]::IsNullOrWhiteSpace($ExistingJwtValue) -or $ExistingJwtValue -match '^(?i)cambia_esto') {
+        Write-Host "[...] JWT_SECRET ausente o de plantilla en .env; generando uno nuevo..."
+        $Chars = (48..57) + (65..90) + (97..122)
+        $JwtSecret = -join ((1..48) | ForEach-Object { [char]($Chars | Get-Random) })
+        if (Get-Content $EnvFile | Select-String -Pattern '^JWT_SECRET=' -Quiet) {
+            (Get-Content $EnvFile) -replace '^JWT_SECRET=.*', "JWT_SECRET=$JwtSecret" | Set-Content $EnvFile -Encoding utf8
+        } else {
+            Add-Content -Path $EnvFile -Value "JWT_SECRET=$JwtSecret" -Encoding utf8
+        }
+        Write-Host "[OK] JWT_SECRET generado y guardado en .env"
+    }
 }
 
 # 10. Base de datos (opcional, solo si hay psql)

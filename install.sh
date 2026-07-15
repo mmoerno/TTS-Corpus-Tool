@@ -140,6 +140,21 @@ EOF
 else
     echo "[OK] .env ya existe"
     DB_PASS_GEN=$(grep -oP '(?<=^DB_PASS=).*' "$PROJECT_ROOT/.env" || true)
+    # Un .env de un intento anterior (interrumpido, o creado a mano copiando
+    # .env.example) puede no traer JWT_SECRET, o traerlo vacio/con el valor
+    # de plantilla: la API rechaza arrancar en ese caso (api/auth.py). Se
+    # repara aqui en vez de limitarse a comprobar que el fichero existe.
+    EXISTING_JWT=$(grep -oP '(?<=^JWT_SECRET=).*' "$PROJECT_ROOT/.env" || true)
+    if [ -z "$EXISTING_JWT" ] || [[ "$EXISTING_JWT" =~ ^[Cc][Aa][Mm][Bb][Ii][Aa]_[Ee][Ss][Tt][Oo] ]]; then
+        echo "[...] JWT_SECRET ausente o de plantilla en .env; generando uno nuevo..."
+        NEW_JWT=$(openssl rand -hex 32)
+        if grep -q '^JWT_SECRET=' "$PROJECT_ROOT/.env"; then
+            sed -i "s|^JWT_SECRET=.*|JWT_SECRET=$NEW_JWT|" "$PROJECT_ROOT/.env"
+        else
+            echo "JWT_SECRET=$NEW_JWT" >> "$PROJECT_ROOT/.env"
+        fi
+        echo "[OK] JWT_SECRET generado y guardado en .env"
+    fi
 fi
 
 # 9. Crear rol y base de datos PostgreSQL (usa peer auth local vía sudo -u postgres)
