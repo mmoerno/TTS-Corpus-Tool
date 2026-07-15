@@ -6,7 +6,9 @@ from config import OUTPUT_ROOT
 from ui.api_client import get_clips, generar_splits
 
 
-def vaciar_eliminados():
+def vaciar_eliminados(confirmado: bool):
+    if not confirmado:
+        return "Marca la casilla de confirmación antes de vaciar la papelera: la acción es permanente."
     total = 0
     for d in OUTPUT_ROOT.rglob("_eliminados"):
         if not d.is_dir():
@@ -74,7 +76,6 @@ def build_tab():
     with gr.Row():
         btn_stats = gr.Button("Calcular estadisticas", variant="primary")
         btn_rebuild = gr.Button("Generar particiones (entrenamiento/validación)", variant="secondary")
-        btn_vaciar = gr.Button("Vaciar la papelera de clips descartados", variant="stop")
     resumen_stats = gr.Markdown("")
     tabla_stats = gr.Dataframe(
         headers=["Hablante", "Clips", "Duracion real", "Estado"],
@@ -82,4 +83,17 @@ def build_tab():
     )
     btn_stats.click(calcular_estadisticas, outputs=[resumen_stats, tabla_stats])
     btn_rebuild.click(reconstruir_splits, outputs=[resumen_stats, tabla_stats])
-    btn_vaciar.click(vaciar_eliminados, outputs=resumen_stats)
+
+    # Acción destructiva e irreversible sobre TODO el dataset (no solo el
+    # municipio actual): oculta por defecto, solo se revela para rol admin
+    # (gui_tts_andaluz.py comprueba el rol tras el login), y exige marcar una
+    # casilla de confirmación explícita antes de borrar nada.
+    with gr.Row(visible=False) as row_vaciar:
+        chk_confirmar_vaciado = gr.Checkbox(
+            label="Confirmo que quiero borrar permanentemente todos los clips de la papelera",
+            value=False, scale=2,
+        )
+        btn_vaciar = gr.Button("Vaciar la papelera de clips descartados", variant="stop", scale=1)
+    btn_vaciar.click(vaciar_eliminados, inputs=chk_confirmar_vaciado, outputs=resumen_stats)
+
+    return row_vaciar

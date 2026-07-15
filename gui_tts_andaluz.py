@@ -259,16 +259,16 @@ with gr.Blocks(title="Andalucía TTS") as app:
     with gr.Tab("Procesar audios"):
         build_tab_procesar(PROVINCIAS_CHOICES, MUNICIPIOS_NGA, NGA_TOPONIMOS)
 
-    with gr.Tab("Revisar transcripciones"):
+    with gr.Tab("Revisar transcripciones", visible=False) as tab_revisar:
         build_tab_revisar()
 
-    with gr.Tab("Estadisticas"):
-        build_tab_estadisticas()
+    with gr.Tab("Estadísticas"):
+        row_vaciar_papelera = build_tab_estadisticas()
 
-    with gr.Tab("Entrenar XTTS"):
+    with gr.Tab("Entrenar XTTS", visible=False) as tab_entrenar:
         build_tab_entrenar()
 
-    with gr.Tab("Exportar datasets"):
+    with gr.Tab("Exportar datasets", visible=False) as tab_exportar:
         build_tab_exportar(PROVINCIAS_CHOICES, MUNICIPIOS_NGA)
 
     with gr.Tab("Logs"):
@@ -292,7 +292,7 @@ with gr.Blocks(title="Andalucía TTS") as app:
         btn_logs_refrescar.click(log_stream.get_log_text, outputs=logs_box)
         btn_logs_limpiar.click(log_stream.clear, outputs=logs_box)
 
-    with gr.Tab("Gestion de usuarios", visible=False) as tab_usuarios:
+    with gr.Tab("Gestión de usuarios", visible=False) as tab_usuarios:
         build_tab_usuarios()
 
     def _mostrar_tab_usuarios_si_admin():
@@ -303,7 +303,46 @@ with gr.Blocks(title="Andalucía TTS") as app:
             rol = None
         return gr.update(visible=(rol == "admin"))
 
+    def _mostrar_tab_revisar_si_autorizado():
+        """El audio y las transcripciones solo son accesibles a revisor/admin."""
+        try:
+            rol = api_get_me().get("rol")
+        except Exception:
+            rol = None
+        return gr.update(visible=(rol in ("admin", "revisor")))
+
+    def _mostrar_vaciar_papelera_si_admin():
+        """Borrado permanente de todo el dataset: reservado a admin."""
+        try:
+            rol = api_get_me().get("rol")
+        except Exception:
+            rol = None
+        return gr.update(visible=(rol == "admin"))
+
+    def _mostrar_tab_entrenar_si_admin():
+        """Entrenamiento y sintesis: coste computacional alto (horas de CPU/GPU)
+        y capacidad de usar el audio de cualquier hablante como referencia;
+        reservado a admin."""
+        try:
+            rol = api_get_me().get("rol")
+        except Exception:
+            rol = None
+        return gr.update(visible=(rol == "admin"))
+
+    def _mostrar_tab_exportar_si_autorizado():
+        """La exportación expone las transcripciones de todos los hablantes,
+        no solo las del usuario actual: reservada a revisor/admin."""
+        try:
+            rol = api_get_me().get("rol")
+        except Exception:
+            rol = None
+        return gr.update(visible=(rol in ("admin", "revisor")))
+
     app.load(_mostrar_tab_usuarios_si_admin, outputs=tab_usuarios)
+    app.load(_mostrar_tab_revisar_si_autorizado, outputs=tab_revisar)
+    app.load(_mostrar_vaciar_papelera_si_admin, outputs=row_vaciar_papelera)
+    app.load(_mostrar_tab_entrenar_si_admin, outputs=tab_entrenar)
+    app.load(_mostrar_tab_exportar_si_autorizado, outputs=tab_exportar)
 
 if __name__ == "__main__":
     app.launch(

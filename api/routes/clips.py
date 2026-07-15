@@ -50,7 +50,7 @@ def listar_clips(
     split: Optional[str] = Query(None),
     activo: Optional[bool] = Query(True),
     db: Session = Depends(get_db),
-    _: CurrentUser = None,
+    current_user: CurrentUser = None,
 ):
     q = db.query(Clip)
     if hablante_id is not None:
@@ -59,6 +59,10 @@ def listar_clips(
         q = q.filter(Clip.split == split)
     if activo is not None:
         q = q.filter(Clip.activo == activo)
+    # El rol recolector solo puede consultar los clips que él mismo registró;
+    # revisor y admin necesitan ver todo el corpus para poder revisarlo.
+    if current_user.rol == "recolector":
+        q = q.filter(Clip.creado_por_id == current_user.id)
     return [_clip_dict(c) for c in q.order_by(Clip.creado_en.desc()).all()]
 
 
@@ -66,9 +70,12 @@ def listar_clips(
 def detalle_clip(
     clip_id: int,
     db: Session = Depends(get_db),
-    _: CurrentUser = None,
+    current_user: CurrentUser = None,
 ):
-    return _clip_dict(_get_or_404(db, clip_id))
+    clip = _get_or_404(db, clip_id)
+    if current_user.rol == "recolector" and clip.creado_por_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Solo puedes consultar tus propios clips")
+    return _clip_dict(clip)
 
 
 @router.put("/{clip_id}")

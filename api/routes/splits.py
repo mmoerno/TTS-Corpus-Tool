@@ -7,7 +7,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from data.db import get_db, Clip
-from api.auth import AdminUser, CurrentUser
+from api.auth import AdminUser, RevisorUser
 from config import TRAIN_RATIO
 
 router = APIRouter(prefix="/splits", tags=["splits"])
@@ -52,7 +52,7 @@ def exportar_split(
     formato: str,
     split: str = Query("train", pattern="^(train|eval)$"),
     db: Session = Depends(get_db),
-    _: CurrentUser = None,
+    _: RevisorUser = None,
 ):
     """
     Exporta clips de un split como fichero descargable.

@@ -166,8 +166,11 @@ def guardar_y_siguiente(nueva_texto, state):
             for r in s["rows"]:
                 if r["nombre_archivo"] == row["nombre_archivo"]:
                     r["transcripcion"] = nueva_texto.strip()
-        except Exception:
-            pass
+        except Exception as e:
+            # No avanzar ni dar la corrección por guardada si la API la rechaza
+            # (p. ej. por no tener rol de revisor): el clip debe seguir "pendiente".
+            audio, texto, _, btn_a, btn_sig, clip_dd = _clip_actual(s)
+            return audio, texto, f"No se pudo guardar la corrección: {e}", btn_a, btn_sig, clip_dd, s
 
     if s["idx"] < len(rows_f) - 1:
         s["idx"] += 1
@@ -187,6 +190,15 @@ def borrar_clip(state):
     nombre  = row["nombre_archivo"]
     clip_id = s["id_map"].get(nombre)
 
+    # El borrado lógico en la API (que exige rol revisor/admin) debe ir ANTES
+    # de tocar el fichero: si la API lo rechaza, el WAV no debe moverse.
+    if clip_id:
+        try:
+            borrar_clip_api(clip_id)
+        except Exception as e:
+            audio, texto, _, btn_a, btn_sig, clip_dd = _clip_actual(s)
+            return audio, texto, f"No se pudo borrar el clip: {e}", btn_a, btn_sig, clip_dd, s
+
     wav_path = (Path(mun_dir) / nombre) if mun_dir else None
     if wav_path and wav_path.exists():
         destino_dir = Path(mun_dir) / "_eliminados"
@@ -195,12 +207,6 @@ def borrar_clip(state):
         if destino.exists():
             destino = destino_dir / f"{wav_path.stem}_{random.randint(1000, 9999)}{wav_path.suffix}"
         shutil.move(str(wav_path), str(destino))
-
-    if clip_id:
-        try:
-            borrar_clip_api(clip_id)
-        except Exception:
-            pass
 
     s["rows"]           = [r for r in s["rows"] if r["nombre_archivo"] != nombre]
     s["rows_filtradas"] = [r for r in rows_f    if r["nombre_archivo"] != nombre]
