@@ -83,13 +83,15 @@ install_pip_package() {
 # 4. Actualizar pip
 install_pip_package "Actualizando pip" --upgrade pip setuptools wheel
 
-# 5. Dependencias base
-install_pip_package "Dependencias base" -r "$PROJECT_ROOT/requirements.txt"
-
-# 6. PyTorch (sin pin de version exacta: las versiones antiguas dejan de
+# 5. PyTorch (sin pin de version exacta: las versiones antiguas dejan de
 #    publicarse en el indice de PyTorch con el tiempo — p. ej. 2.7.1+cpu ya
 #    no esta disponible —, asi que dejamos que pip resuelva la mas reciente
-#    compatible entre torch y torchaudio)
+#    compatible entre torch y torchaudio). Va ANTES que requirements.txt a
+#    proposito: openai-whisper depende de "torch" sin fijar version ni
+#    indice, asi que si se instala primero requirements.txt, pip resuelve
+#    torch desde PyPI normal (build generico, no el CPU-only de este indice)
+#    y luego este paso lo encuentra "ya satisfecho" y solo instala torchaudio,
+#    dejando versiones de torch/torchaudio desincronizadas.
 if [ "$IS_ARM" = true ]; then
     # Raspberry Pi: usar wheels de PyPI (CPU, ARM)
     install_pip_package "PyTorch ARM (puede tardar varios minutos)" torch torchaudio
@@ -97,6 +99,9 @@ else
     # Linux x86 sin GPU
     install_pip_package "PyTorch CPU" torch torchaudio --index-url https://download.pytorch.org/whl/cpu
 fi
+
+# 6. Dependencias base
+install_pip_package "Dependencias base" -r "$PROJECT_ROOT/requirements.txt"
 
 # 7. transformers + CoquiTTS
 install_pip_package "transformers" "transformers==4.57.6"

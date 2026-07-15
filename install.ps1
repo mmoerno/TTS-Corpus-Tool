@@ -105,14 +105,19 @@ function Install-PipPackage {
 # 4. Actualizar pip
 Install-PipPackage -PipArgs @("--upgrade", "pip", "setuptools", "wheel") -Description "Actualizando pip"
 
-# 5. Dependencias base
-Install-PipPackage -PipArgs @("-r", (Join-Path $ProjectRoot "requirements.txt")) -Description "Dependencias base"
-
-# 6. PyTorch CPU (sin pin de version exacta: las versiones antiguas dejan de
+# 5. PyTorch CPU (sin pin de version exacta: las versiones antiguas dejan de
 #    publicarse en el indice de PyTorch con el tiempo — p. ej. 2.7.1+cpu ya
 #    no esta disponible —, asi que dejamos que pip resuelva la mas reciente
-#    compatible entre torch y torchaudio)
+#    compatible entre torch y torchaudio). Va ANTES que requirements.txt a
+#    proposito: openai-whisper depende de "torch" sin fijar version ni
+#    indice, asi que si se instala primero el requirements.txt, pip resuelve
+#    torch desde PyPI normal (build generico, no el CPU-only de este indice)
+#    y luego este paso lo encuentra "ya satisfecho" y solo instala torchaudio,
+#    dejando versiones de torch/torchaudio desincronizadas.
 Install-PipPackage -PipArgs @("torch", "torchaudio", "--index-url", "https://download.pytorch.org/whl/cpu") -Description "PyTorch CPU"
+
+# 6. Dependencias base
+Install-PipPackage -PipArgs @("-r", (Join-Path $ProjectRoot "requirements.txt")) -Description "Dependencias base"
 
 # 7. transformers + CoquiTTS (fork Idiap para Python 3.12)
 Install-PipPackage -PipArgs @("transformers==4.57.6") -Description "transformers"
