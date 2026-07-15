@@ -94,7 +94,15 @@ function Install-PipPackage {
     # su propio .exe mientras se esta ejecutando como tal en Windows, lo que
     # rompe justamente el primer paso (actualizar pip) con "ERROR: To modify
     # pip, please run ... python.exe -m pip install --upgrade pip".
-    & $Python -m pip install @PipArgs --quiet
+    # try/catch alrededor de la llamada: si pip falla de verdad (exit code
+    # distinto de cero) y escribe en stderr, PowerShell (con
+    # $ErrorActionPreference = "Stop") lo convierte en un error terminante
+    # que aborta TODO el script ahi mismo, saltandose el "if" de abajo y por
+    # tanto el mensaje [ERROR] pensado para este caso — y con ello cualquier
+    # paso posterior (incluida la creacion de .env) nunca llega a ejecutarse.
+    try {
+        & $Python -m pip install @PipArgs --quiet
+    } catch {}
     if ($LASTEXITCODE -ne 0) {
         Write-Host "[ERROR] Fallo instalando: $Description. Revisa el mensaje de pip mas arriba."
         exit 1
@@ -133,9 +141,14 @@ if ([version]$PyVerNum -ge [version]"3.12") {
     Install-PipPackage -PipArgs @("TTS") -Description "TTS"
 }
 
-# 8. Piper (fine-tuning ligero, recomendado para Raspberry Pi pero instalable aqui tambien)
+# 8. Piper (fine-tuning ligero, recomendado para Raspberry Pi pero instalable
+#    aqui tambien; piper-phonemize no publica wheel para todas las
+#    plataformas/versiones de Python, el try/catch evita que ese fallo, no
+#    fatal, aborte el resto del script)
 Write-Host "[...] Instalando Piper..."
-& $Python -m pip install piper-tts piper-phonemize --quiet 2>$null
+try {
+    & $Python -m pip install piper-tts piper-phonemize --quiet 2>$null
+} catch {}
 if ($LASTEXITCODE -eq 0) {
     Write-Host "[OK] Piper instalado"
 } else {
