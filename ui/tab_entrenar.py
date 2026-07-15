@@ -108,6 +108,30 @@ def get_fuentes_entrenamiento() -> list:
     return opciones
 
 
+def get_modelos_entrenados() -> list:
+    """Modelos ya entrenados en exports/modelos/, detectando el tipo por lo que contiene
+    cada carpeta. Permite sintetizar con un modelo de una sesión anterior sin reentrenar."""
+    modelos_dir = Path(EXPORT_ROOT) / "modelos"
+    if not modelos_dir.exists():
+        return []
+    resultado = []
+    for carpeta in sorted(modelos_dir.iterdir()):
+        if not carpeta.is_dir():
+            continue
+        onnx = carpeta / "model.onnx"
+        if onnx.exists():
+            resultado.append({"nombre": carpeta.name, "model_code": "piper",
+                               "model_dir": str(carpeta), "onnx_path": str(onnx)})
+        elif list(carpeta.rglob("config.json")):
+            resultado.append({"nombre": carpeta.name, "model_code": "xtts",
+                               "model_dir": str(carpeta), "onnx_path": None})
+        elif list(carpeta.rglob("*.ckpt")):
+            # Piper entrenado pero todavía sin exportar a ONNX.
+            resultado.append({"nombre": carpeta.name, "model_code": "piper",
+                               "model_dir": str(carpeta), "onnx_path": None})
+    return resultado
+
+
 def resolver_fuente_csv(fuente: str):
     try:
         if fuente.startswith("Dataset global"):
@@ -584,30 +608,100 @@ def exportar_onnx(state):
     return "\n".join(log_lines), None, new_state
 
 
-def sintetizar_ft(texto: str, ref_audio: str, state: dict):
+def _estado_desde_modelo(nombre: str, state: dict):
+    """Devuelve (new_state, info, msg) para un modelo entrenado por nombre, o
+    (state, None, msg_error) si no se encuentra. No toca la interfaz."""
+    info = next((m for m in get_modelos_entrenados() if m["nombre"] == nombre), None)
+    if not info:
+        return state, None, f"Modelo '{nombre}' no encontrado en exports/modelos/."
+    new_state = dict(state)
+    new_state.update({
+        "model_code": info["model_code"],
+        "model_dir":  info["model_dir"],
+        "onnx_path":  info["onnx_path"],
+        "trained":    True,
+    })
+    msg = f"Modelo '{nombre}' ({info['model_code']}) cargado desde {info['model_dir']}."
+    if info["model_code"] == "piper" and not info["onnx_path"]:
+        msg += " Exporta primero a ONNX (botón de abajo) antes de sintetizar."
+    return new_state, info, msg
+
+
+def cargar_modelo_existente(nombre: str, state: dict):
+    """Carga un modelo ya entrenado (de una sesión anterior o de otra máquina) sin
+    necesidad de volver a entrenar ni de mantener viva la sesión que lo entrenó."""
+    if not nombre:
+        return state, gr.update(), gr.update(), "Selecciona un modelo."
+
+    new_state, info, msg = _estado_desde_modelo(nombre, state)
+    print(f"[cargar_modelo] {msg}")
+    if info is None:
+        return state, gr.update(), gr.update(), msg
+    return (
+        new_state,
+        gr.update(visible=info["model_code"] == "xtts"),
+        gr.update(visible=info["model_code"] == "piper"),
+        msg,
+    )
+
+
+def sintetizar_ft(texto: str, ref_file: str, ref_mic: str, state: dict, modelo_seleccionado: str = None):
+    # Referencia: fichero subido (cualquier formato) o grabación de micrófono.
+    ref_audio = ref_file or ref_mic
+    # Generador: la síntesis XTTS en CPU tarda minutos y XTTSTrainer.synthesize()
+    # es bloqueante, así que se emite feedback antes de arrancar para que el
+    # cuadro de resultado no quede mudo (y no parezca que la app se ha colgado).
+
+    # Red de seguridad: si el estado de sesión no refleja un modelo cargado
+    # (p. ej. el evento .change del desplegable no llegó a propagar el estado en
+    # esta sesión de Gradio) pero hay un modelo elegido en el desplegable, se
+    # carga aquí mismo a partir de ese nombre. Así la síntesis no depende de que
+    # el estado se haya propagado antes.
+    if not state.get("trained") and modelo_seleccionado:
+        state, info, msg = _estado_desde_modelo(modelo_seleccionado, state)
+        print(f"[sintetizar_ft] auto-carga: {msg}")
+
     if not state.get("trained"):
-        return "Completa primero el entrenamiento (Paso 3).", None
+        yield ("No hay ningún modelo cargado. Selecciona uno en «Cargar un modelo "
+               "ya entrenado» o completa el entrenamiento (Paso 3).", None)
+        return
     if not texto or not texto.strip():
-        return "Escribe un texto de prueba.", None
+        yield "Escribe un texto de prueba.", None
+        return
 
     model_code = state.get("model_code")
     output_wav = Path(state["model_dir"]) / "_prueba_ft.wav"
 
     if model_code == "xtts":
         if not ref_audio:
-            return "XTTS v2 necesita un audio de referencia (graba o sube un clip).", None
+            yield "XTTS v2 necesita un audio de referencia (graba o sube un clip).", None
+            return
+        # Convertir la referencia al mismo formato interno que el corpus
+        # (WAV mono 22050 Hz 16 bits), igual que zero-shot y «Procesar audios».
+        # Además del beneficio de coherencia, el cargador de audio de XTTS usa
+        # soundfile (ver _patch_xtts_audio_loading), que no lee MP3/M4A: sin
+        # esta conversión una referencia en esos formatos haría fallar la síntesis.
+        yield "Convirtiendo audio de referencia al formato interno (WAV 22050 Hz mono)…", None
+        ref_audio = _normalizar_referencia(ref_audio, Path(state["model_dir"]) / "ref_tmp")
+        yield ("Sintetizando con XTTS v2... En CPU esto puede tardar varios minutos; "
+               "no cierres ni recargues la pestaña.", None)
         ok, log = XTTSTrainer.synthesize(
             Path(state["model_dir"]), texto.strip(), ref_audio, output_wav
         )
     elif model_code == "piper":
         onnx = state.get("onnx_path")
         if not onnx:
-            return "Exporta primero a ONNX (botón de arriba).", None
+            yield "Exporta primero a ONNX (botón de arriba).", None
+            return
+        yield "Sintetizando con Piper...", None
         ok, log = PiperTrainer.synthesize(Path(onnx), texto.strip(), output_wav)
     else:
-        return f"Síntesis no implementada para {model_code}.", None
+        yield f"Síntesis no implementada para {model_code}.", None
+        return
 
-    return "\n".join(log), (str(output_wav) if ok and output_wav.exists() else None)
+    # Volcar el log también al stdout para que quede en la pestaña «Logs».
+    print("[sintetizar_ft] " + " | ".join(log))
+    yield "\n".join(log), (str(output_wav) if ok and output_wav.exists() else None)
 
 
 # ---------------------------------------------------------------------------
@@ -792,6 +886,15 @@ def build_tab():
 
         # ── Paso 4 ──────────────────────────────────────────────────────
         with gr.Accordion("🎙️  Paso 4 — Probar el modelo entrenado", open=False) as paso4_acc:
+            with gr.Row():
+                modelo_existente_dd = gr.Dropdown(
+                    choices=[m["nombre"] for m in get_modelos_entrenados()],
+                    label="Cargar un modelo ya entrenado",
+                    info="De exports/modelos/, sin reentrenar ni depender de esta sesión",
+                    scale=3,
+                )
+                btn_refrescar_modelos = gr.Button("🔄", scale=0)
+
             texto_ft = gr.Textbox(
                 value="El aceite de oliva del campo andaluz está mu rico, ¿verdad?",
                 label="Texto de prueba",
@@ -800,10 +903,19 @@ def build_tab():
 
             with gr.Group(visible=True) as ref_audio_ft_grp:
                 gr.Markdown("*XTTS v2 necesita un audio de referencia del hablante (6-12 s).*")
-                ref_audio_ft = gr.Audio(
-                    label="Audio de referencia",
+                # Se usa gr.File (no gr.Audio) para subir: gr.Audio filtra por
+                # tipo MIME en el navegador y rechaza formatos como el .opus de
+                # WhatsApp antes de llegar al servidor. gr.File acepta cualquier
+                # fichero y la conversión posterior (ffmpeg) lo normaliza.
+                ref_file_ft = gr.File(
+                    label="Subir audio o vídeo de referencia (6-12 s) — cualquier formato",
+                    file_types=None,
                     type="filepath",
-                    sources=["upload", "microphone"],
+                )
+                ref_mic_ft = gr.Audio(
+                    label="…o grabar directamente con el micrófono",
+                    type="filepath",
+                    sources=["microphone"],
                 )
 
             with gr.Group(visible=False) as onnx_grp:
@@ -904,6 +1016,17 @@ def build_tab():
 
     btn_sintetizar_ft.click(
         sintetizar_ft,
-        inputs=[texto_ft, ref_audio_ft, ft_state],
+        inputs=[texto_ft, ref_file_ft, ref_mic_ft, ft_state, modelo_existente_dd],
         outputs=[msg_ft, audio_ft],
+    )
+
+    btn_refrescar_modelos.click(
+        lambda: gr.update(choices=[m["nombre"] for m in get_modelos_entrenados()]),
+        outputs=modelo_existente_dd,
+    )
+
+    modelo_existente_dd.change(
+        cargar_modelo_existente,
+        inputs=[modelo_existente_dd, ft_state],
+        outputs=[ft_state, ref_audio_ft_grp, onnx_grp, msg_ft],
     )

@@ -237,8 +237,8 @@ def build_tab():
 
     with gr.Row():
         mun_rev_dd  = gr.Dropdown(choices=get_municipios_procesados(), label="Municipio a revisar", scale=3)
-        btn_cargar  = gr.Button("Cargar", scale=1)
-        btn_act_rev = gr.Button("Actualizar lista", scale=1)
+        btn_cargar  = gr.Button("Cargar clips del municipio", scale=1)
+        btn_act_rev = gr.Button("Actualizar municipios", scale=1)
 
     btn_act_rev.click(
         lambda: gr.update(choices=get_municipios_procesados()),
@@ -256,8 +256,12 @@ def build_tab():
     with gr.Row():
         btn_ant = gr.Button("Anterior", interactive=False)
         btn_ok  = gr.Button("Guardar y siguiente", variant="primary")
-        btn_del = gr.Button("Borrar clip → _eliminados/", variant="stop")
         btn_sig = gr.Button("Siguiente", interactive=False)
+
+    # El botón de borrado va en su propia fila, separado de la navegación, para
+    # evitar pulsarlo por error al moverse entre clips (feedback de revisores).
+    with gr.Row():
+        btn_del = gr.Button("Borrar clip (recuperable)", variant="stop", scale=0)
 
     # 6 salidas de UI + state
     rev_outs = [audio_pl, transcr_box, progreso_lbl, btn_ant, btn_sig, clip_dd]

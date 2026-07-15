@@ -3,12 +3,17 @@ api/main.py
 Instancia principal de FastAPI.
 """
 
+import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from data.db import init_db
+
+load_dotenv(Path(__file__).parent.parent / ".env")
 from api.routes.usuarios import router as router_usuarios
 from api.routes.municipios import router as municipios_router
 from api.routes.clips import router as clips_router
@@ -29,9 +34,15 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Orígenes permitidos: por defecto la interfaz Gradio local (mismo equipo o
+# mismo nodo Tailscale). Ampliable con CORS_ORIGINS="url1,url2" en .env, p.ej.
+# para servir la interfaz desde otra IP de la VPN.
+_default_origins = "http://127.0.0.1:7860,http://localhost:7860"
+CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", _default_origins).split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # restringir en producción
+    allow_origins=CORS_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )

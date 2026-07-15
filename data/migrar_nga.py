@@ -7,6 +7,7 @@ import csv
 from pathlib import Path
 from data.db import get_session, Municipio, Provincia, Toponimo, engine
 from sqlalchemy.dialects.postgresql import insert
+from core.nga import _normalize
 
 CSV_PATH = Path(__file__).parent.parent / "NGA_TOPONIMOS_20260309.csv"
 
@@ -15,6 +16,11 @@ PROVINCIAS = {
     "18": "Granada",  "21": "Huelva",   "23": "Jaén",
     "29": "Málaga",   "41": "Sevilla",
 }
+
+# Mismo filtro de calidad que core/nga.py::cargar_nga(): solo se conservan
+# topónimos cuyo V_ESTATUS (columna 5, índice 4) indique que el registro está
+# validado o en trámite normal; se descartan estados como "rechazado" o "error".
+ESTADOS_VALIDOS = {"normalizado", "oficial", "no disponible", "alta", "revision"}
 
 # Referencia de coordenadas que asumimos al promediar N_COORDENADAX/N_COORDENADAY
 # para obtener un centroide por municipio (EPSG:25830, ETRS89/UTM huso 30N).
@@ -41,6 +47,7 @@ def migrar():
             if len(row) < 17:
                 continue
             nombre_top  = row[1].strip().strip('"')
+            estado_raw  = row[4].strip().strip('"')
             coord_x     = _parse_coord(row[9])
             coord_y     = _parse_coord(row[10])
             sist_ref    = row[12].strip().strip('"')
@@ -48,6 +55,8 @@ def migrar():
             cod_mun     = row[15].strip().strip('"').zfill(5)
             nombre_mun  = row[16].strip().strip('"')
             if not cod_mun or not nombre_top:
+                continue
+            if _normalize(estado_raw) not in ESTADOS_VALIDOS:
                 continue
             if cod_mun not in datos:
                 datos[cod_mun] = {

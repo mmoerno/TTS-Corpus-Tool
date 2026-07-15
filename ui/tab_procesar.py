@@ -102,11 +102,21 @@ def registrar_hablante_ui(municipio_choice: str, codigo: str, edad, genero: str)
     """Da de alta un hablante nuevo para el municipio seleccionado."""
     cod_municipio = _cod_municipio_de_choice(municipio_choice)
     if not cod_municipio:
-        return gr.update(), gr.update(), "Error: selecciona un municipio primero."
+        return gr.update(), gr.update(), "Selecciona primero un municipio."
 
     codigo = (codigo or "").strip()
     if not re.match(r"^\d{2}$", codigo):
-        return gr.update(), gr.update(), "Error: el código debe tener exactamente 2 dígitos (ej: 01)."
+        return gr.update(), gr.update(), "El código del hablante debe tener exactamente 2 dígitos (por ejemplo, 01)."
+
+    # Validación de edad: si se indica, debe ser un valor plausible.
+    edad_val = None
+    if edad is not None and str(edad).strip() != "":
+        try:
+            edad_val = int(edad)
+        except (TypeError, ValueError):
+            return gr.update(), gr.update(), "La edad debe ser un número entero."
+        if not (0 <= edad_val <= 120):
+            return gr.update(), gr.update(), "La edad debe estar entre 0 y 120 años."
 
     from data.db import get_session, Hablante, Municipio as MunicipioModel
     from sqlalchemy.exc import IntegrityError
@@ -114,44 +124,51 @@ def registrar_hablante_ui(municipio_choice: str, codigo: str, edad, genero: str)
         with get_session() as s:
             mun = s.query(MunicipioModel).filter_by(codigo_ine=cod_municipio).first()
             if not mun:
-                return gr.update(), gr.update(), "Error: municipio no encontrado en la base de datos."
+                return gr.update(), gr.update(), "No se ha encontrado el municipio en la base de datos."
             existe = s.query(Hablante).filter_by(municipio_id=mun.id, codigo=codigo).first()
             if existe:
-                return gr.update(), gr.update(), f"Error: ya existe un hablante con código {codigo} en este municipio."
+                return gr.update(), gr.update(), f"Ya existe un hablante con el código {codigo} en este municipio."
             s.add(Hablante(
                 municipio_id=mun.id,
                 codigo=codigo,
-                edad=int(edad) if edad is not None else None,
+                edad=edad_val,
                 genero=genero or None,
             ))
-        msg = f"Hablante {codigo} registrado."
+        msg = f"Hablante {codigo} registrado correctamente."
     except IntegrityError:
-        return gr.update(), gr.update(), f"Error: ya existe un hablante con código {codigo} en este municipio."
+        return gr.update(), gr.update(), f"Ya existe un hablante con el código {codigo} en este municipio."
     except Exception as e:
-        return gr.update(), gr.update(), f"Error registrando hablante: {e}"
+        return gr.update(), gr.update(), f"No se ha podido registrar el hablante: {e}"
 
     hab_upd, siguiente_upd = hablantes_choices_ui(municipio_choice)
     hab_upd["value"] = codigo
     return hab_upd, siguiente_upd, msg
 
 
-def buscar_municipios_ui(provincia_choice: str, texto: str, municipios_nga: dict):
-    if not provincia_choice or not texto.strip():
+def municipios_provincia_ui(provincia_choice: str, municipios_nga: dict):
+    """Rellena el desplegable de municipio con todos los de la provincia elegida.
+
+    El propio gr.Dropdown ya permite escribir para filtrar entre las opciones
+    cargadas, así que no hace falta un cuadro de búsqueda ni texto previo.
+    """
+    if not provincia_choice:
         return gr.update(choices=[], value=None)
     cod_prov = provincia_choice.split(" - ")[0].strip()
     try:
         todos = get_municipios()
-        resultados = [
-            m for m in todos
-            if texto.strip().lower() in m["nombre"].lower()
-            and m["codigo_ine"].startswith(cod_prov)
-        ]
-        opciones = [f"{m['nombre']} (INE {m['codigo_ine']})" for m in resultados[:20]]
+        resultados = sorted(
+            (m for m in todos if m["codigo_ine"].startswith(cod_prov)),
+            key=lambda m: m["nombre"],
+        )
+        opciones = [f"{m['nombre']} (INE {m['codigo_ine']})" for m in resultados]
     except Exception:
         from core.nga import buscar_municipio_nga
-        resultados_nga = buscar_municipio_nga(municipios_nga, texto.strip(), cod_prov)
+        resultados_nga = sorted(
+            buscar_municipio_nga(municipios_nga, "", cod_prov),
+            key=lambda x: x[1],
+        )
         opciones = [f"{nom} (INE {cod})" for cod, nom, _ in resultados_nga]
-    return gr.update(choices=opciones, value=opciones[0] if opciones else None)
+    return gr.update(choices=opciones, value=None)
 
 
 def _registrar_en_bd(nombre_archivo: str, transcripcion: str,
@@ -413,13 +430,15 @@ def build_tab(provincias_choices: list, municipios_nga: dict, nga_toponimos: dic
 
     gr.Markdown("### Localizacion y hablante")
     with gr.Row():
-        prov_dd    = gr.Dropdown(choices=provincias_choices, label="Provincia")
-        mun_search = gr.Textbox(label="Buscar municipio", placeholder="Ej: utr")
-        mun_dd     = gr.Dropdown(choices=[], label="Municipio")
+        prov_dd = gr.Dropdown(choices=provincias_choices, label="Provincia")
+        mun_dd  = gr.Dropdown(
+            choices=[], label="Municipio",
+            info="Escribe para filtrar entre los municipios de la provincia elegida",
+        )
 
-    mun_search.change(
-        lambda p, t: buscar_municipios_ui(p, t, municipios_nga),
-        inputs=[prov_dd, mun_search], outputs=mun_dd,
+    prov_dd.change(
+        lambda p: municipios_provincia_ui(p, municipios_nga),
+        inputs=prov_dd, outputs=mun_dd,
     )
 
     with gr.Row():
@@ -428,7 +447,7 @@ def build_tab(provincias_choices: list, municipios_nga: dict, nga_toponimos: dic
     with gr.Accordion("Registrar nuevo hablante", open=False):
         with gr.Row():
             nuevo_cod_in    = gr.Textbox(label="Código (2 dígitos)", value="01", scale=1)
-            nuevo_edad_in   = gr.Number(label="Edad", precision=0, scale=1)
+            nuevo_edad_in   = gr.Number(label="Edad", precision=0, minimum=0, maximum=120, scale=1)
             nuevo_genero_dd = gr.Dropdown(choices=["M", "F", "X"], label="Género", scale=1)
             btn_nuevo_hab   = gr.Button("Registrar hablante", scale=1)
         msg_nuevo_hab = gr.Markdown()

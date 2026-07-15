@@ -6,6 +6,8 @@ Herramienta de TFG (Trabajo de Fin de Grado) para la construcción, revisión y 
 
 ## Instalación
 
+**Esta instalación se hace una sola vez, en la máquina que actúa de servidor** (un PC, un portátil o una Raspberry Pi que se queda encendida y accesible en la red) — no en el equipo de cada persona que va a usar la app. El resto de colaboradores (recolectores, revisores, administradores) no instalan nada: abren un navegador en su propio portátil, tableta o móvil y se conectan a la dirección de ese servidor (ver [Acceder desde otro dispositivo](#acceder-desde-otro-dispositivo) más abajo).
+
 **Sistemas operativos soportados**: **Windows 10/11** y **Linux** (incluida Raspberry Pi OS / ARM64). No se ha probado en macOS.
 
 **Requisitos**: Python **3.10, 3.11 o 3.12** (3.12 necesita un paso extra para XTTS v2, explicado más abajo; versiones más recientes de Python no se han probado y pueden fallar) · PostgreSQL 14+ · ffmpeg. `espeak-ng` solo hace falta si vas a usar Piper; CUDA solo si vas a usar F5-TTS o XTTS con GPU.
@@ -24,7 +26,7 @@ Herramienta de TFG (Trabajo de Fin de Grado) para la construcción, revisión y 
 
 ### Acceder a la aplicación
 
-Abre `http://localhost:7860` en el navegador. La pantalla de acceso pide **usuario y contraseña**: son los que creaste en el paso de instalación. Si respondiste que no a la creación del administrador, créalo ahora:
+Desde el propio servidor, abre `http://localhost:7860` en el navegador. La pantalla de acceso pide **usuario y contraseña**: son los que creaste en el paso de instalación. Si respondiste que no a la creación del administrador, créalo ahora:
 ```
 venv\Scripts\python.exe -c "from data.db import crear_usuario; crear_usuario('tu_uvus','Tu Nombre','admin','tu_contraseña')"
 ```
@@ -33,6 +35,16 @@ Si al entrar el desplegable de municipio aparece vacío en la pestaña "Procesar
 ```
 venv\Scripts\python.exe -c "from data.migrar_nga import migrar; migrar()"
 ```
+
+#### Acceder desde otro dispositivo
+
+La API y la GUI escuchan en `0.0.0.0`, es decir, en todas las interfaces de red del servidor, no solo en `localhost` — por diseño, para que se pueda acceder desde otros equipos de la misma red. Desde un portátil, tableta o móvil distinto del servidor:
+
+1. Averigua la IP del servidor en su propia red (`ipconfig` en Windows / `hostname -I` en Linux; con Tailscale u otra VPN, usa la IP de esa red en su lugar).
+2. Abre `http://<IP-del-servidor>:7860` en el navegador del otro dispositivo — no `localhost`, que ahí apuntaría al propio dispositivo.
+3. Asegúrate de que el cortafuegos del servidor permite conexiones entrantes al puerto 7860 (y al 8000 si vas a usar la API o `/docs` directamente desde otro equipo).
+
+Si la API y la GUI corren en máquinas distintas (no es el caso habitual), ajusta además `API_BASE` en `.env` para que apunte a la IP del servidor de la API (ver [Sección 12](#12-configuración)).
 
 <details>
 <summary><strong>Detalles de instalación</strong>: dependencias exactas, modelos TTS opcionales, instalador reforzado, configuración manual de la base de datos</summary>

@@ -20,11 +20,9 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 _default_secret = "cambia_esto_en_produccion_ahora"
 SECRET_KEY = os.getenv("JWT_SECRET", _default_secret)
 if SECRET_KEY == _default_secret:
-    import warnings
-    warnings.warn(
-        "JWT_SECRET no configurado en .env — usando clave por defecto insegura. "
-        "Establece JWT_SECRET antes de desplegar en producción.",
-        stacklevel=1,
+    raise RuntimeError(
+        "JWT_SECRET no configurado en .env — establece una cadena aleatoria larga "
+        "antes de arrancar la API (ver .env.example)."
     )
 ALGORITHM     = "HS256"
 TOKEN_MINUTES = int(os.getenv("JWT_MINUTES", "480"))  # 8 horas

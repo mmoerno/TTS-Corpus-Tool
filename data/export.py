@@ -110,15 +110,30 @@ def export_ljspeech(rows: List[List[str]], out_dir: Path, copy_mode: str = "copy
 #                tiene lógica para saltarse cabeceras en LJSpeech)
 # ---------------------------------------------------------------------------
 
+# Límite de caracteres por frase que admite el tokenizer de XTTS v2 para
+# español sin arriesgar audio truncado (max_text_length del GPT, ver
+# core/train.py). Los clips de habla espontánea sin segmentar por frase son
+# los que más fácilmente lo superan.
+XTTS_MAX_TEXT_LENGTH = 239
+
+
 def export_xtts(rows: List[List[str]], out_dir: Path, copy_mode: str = "copy"):
     fmt_dir = out_dir / "xtts"
     fmt_dir.mkdir(parents=True, exist_ok=True)
-    _ensure_wavs_and_copy(rows, fmt_dir / "wavs", copy_mode=copy_mode)
+
+    rows_validas = [r for r in rows if len(r[1] if len(r) > 1 else "") <= XTTS_MAX_TEXT_LENGTH]
+    omitidos = len(rows) - len(rows_validas)
+    if omitidos:
+        print(f" ! Export XTTS: {omitidos} clip(s) omitidos por superar "
+              f"{XTTS_MAX_TEXT_LENGTH} caracteres de transcripción "
+              f"(riesgo de audio truncado en el GPT de XTTS).")
+
+    _ensure_wavs_and_copy(rows_validas, fmt_dir / "wavs", copy_mode=copy_mode)
 
     combined = fmt_dir / "metadata.csv"
     with open(combined, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f, delimiter="|", quoting=csv.QUOTE_NONE, escapechar="\\")
-        for row in rows:
+        for row in rows_validas:
             src_rel = row[0]
             trans   = row[1] if len(row) > 1 else ""
             stem    = Path(Path(src_rel).name).stem

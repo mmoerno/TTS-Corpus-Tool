@@ -73,8 +73,8 @@ def build_tab():
     gr.Markdown("### Estado del dataset por hablante")
     with gr.Row():
         btn_stats = gr.Button("Calcular estadisticas", variant="primary")
-        btn_rebuild = gr.Button("Generar splits (train/eval)", variant="secondary")
-        btn_vaciar = gr.Button("Vaciar _eliminados/", variant="stop")
+        btn_rebuild = gr.Button("Generar particiones (entrenamiento/validación)", variant="secondary")
+        btn_vaciar = gr.Button("Vaciar la papelera de clips descartados", variant="stop")
     resumen_stats = gr.Markdown("")
     tabla_stats = gr.Dataframe(
         headers=["Hablante", "Clips", "Duracion real", "Estado"],

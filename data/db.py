@@ -278,6 +278,12 @@ def init_db():
     Base.metadata.create_all(bind=engine)
     _migrar_columnas_municipio()
     print(f" + Base de datos inicializada: {engine.url}")
+    with get_session() as session:
+        if session.query(Usuario).count() == 0:
+            print(" ! No hay ningún usuario en la base de datos: nadie podrá iniciar sesión.")
+            print("   Crea el primer administrador con:")
+            print("   venv\\Scripts\\python.exe -c \"from data.db import crear_usuario; "
+                  "crear_usuario('tu_uvus','Tu Nombre','admin','tu_contraseña')\"")
 
 
 def verificar_credenciales(uvus: str, password: str) -> bool:

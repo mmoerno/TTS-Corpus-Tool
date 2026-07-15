@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 gui_tts_andaluz.py
-Punto de entrada de la interfaz Gradio para el Dataset TTS Multiaccento Andaluz.
+Punto de entrada de la interfaz Gradio para Andalucía TTS.
 """
 
 # ---------------------------------------------------------------------------
@@ -99,6 +99,31 @@ from pathlib import Path
 from ui.api_client import get_clips
 
 import gradio as gr
+
+# BrotliMiddleware de Gradio 6.18 corrompe respuestas cuando el navegador
+# cancela una petición a mitad de un stream comprimido (frecuente con el log
+# en vivo del entrenamiento y el polling de estado): revienta con
+# "RuntimeError: Response content shorter than Content-Length" y esa petición
+# se pierde sin que la interfaz avise. No hay parámetro público en
+# app.launch() para desactivarlo, así que se sustituye por un middleware
+# transparente antes de construir la app.
+import gradio.routes as _gradio_routes
+
+
+class _NoOpMiddleware:
+    def __init__(self, app, *args, **kwargs):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        await self.app(scope, receive, send)
+
+
+_gradio_routes.BrotliMiddleware = _NoOpMiddleware
+
+# Capturar stdout/stderr en un búfer para la pestaña «Logs» en vivo. Se instala
+# cuanto antes para no perder la salida del arranque (carga del NGA, etc.).
+from ui import log_stream
+log_stream.install()
 
 from procesar_audios_andalucia import (
     NGA_CSV, OUTPUT_ROOT, GLOBAL_CSV,
@@ -214,9 +239,9 @@ PROVINCIAS_CHOICES = [
 # ---------------------------------------------------------------------------
 # App
 # ---------------------------------------------------------------------------
-with gr.Blocks(title="Dataset TTS Multiaccento Andaluz") as app:
+with gr.Blocks(title="Andalucía TTS") as app:
 
-    gr.Markdown("# Dataset TTS Multiaccento Andaluz")
+    gr.Markdown("# Andalucía TTS")
     gr.Markdown(
         "Herramienta para construir datasets de audio para fine-tuning de XTTS v2 "
         "con los acentos provinciales de Andalucia."
@@ -245,6 +270,27 @@ with gr.Blocks(title="Dataset TTS Multiaccento Andaluz") as app:
 
     with gr.Tab("Exportar datasets"):
         build_tab_exportar(PROVINCIAS_CHOICES, MUNICIPIOS_NGA)
+
+    with gr.Tab("Logs"):
+        gr.Markdown(
+            "Salida en vivo del servidor: carga de modelos, síntesis, entrenamiento, "
+            "avisos y errores. Se refresca automáticamente cada 2 segundos."
+        )
+        with gr.Row():
+            logs_auto_chk = gr.Checkbox(value=True, label="Auto-refresco", scale=0)
+            btn_logs_refrescar = gr.Button("Refrescar ahora", scale=0)
+            btn_logs_limpiar   = gr.Button("Limpiar", scale=0)
+        logs_box = gr.Textbox(
+            label="Log del servidor", lines=28, max_lines=28,
+            interactive=False, autoscroll=True, value=log_stream.get_log_text,
+        )
+        logs_timer = gr.Timer(2.0)
+        logs_timer.tick(
+            lambda activo: gr.update(value=log_stream.get_log_text()) if activo else gr.update(),
+            inputs=logs_auto_chk, outputs=logs_box,
+        )
+        btn_logs_refrescar.click(log_stream.get_log_text, outputs=logs_box)
+        btn_logs_limpiar.click(log_stream.clear, outputs=logs_box)
 
     with gr.Tab("Gestion de usuarios", visible=False) as tab_usuarios:
         build_tab_usuarios()

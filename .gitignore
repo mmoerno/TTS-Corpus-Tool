@@ -6,6 +6,9 @@ env/
 # Variables de entorno (contiene contraseñas y secretos)
 .env
 
+# Bloqueo de entrenamiento en curso (runtime, ver core/train.py)
+.training.lock
+
 # Caché de modelos HuggingFace (hasta 2 GB por modelo)
 .hf_cache/
 
@@ -14,6 +17,8 @@ env/
 
 # Dataset de audio (archivos grandes, transferir por separado)
 dataset/
+
+# Datasets exportados para entrenamiento (regenerable a partir de dataset/)
 exports/
 
 # Base de datos SQLite y backups locales
@@ -58,3 +63,4 @@ Desktop.ini
 # Logs
 *.log
 logs/
+
