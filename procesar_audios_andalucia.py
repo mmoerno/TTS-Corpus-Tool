@@ -435,35 +435,9 @@ def migrate_csv(csv_path, new_header):
             w.writerow(padded[:len(new_header)])
 
 
-def split_train_eval(csv_path, train_path, eval_path, header):
-    with open(csv_path, newline="", encoding="utf-8") as f:
-        rows = [r for r in csv.reader(f, delimiter="|") if r[0] != "audio"]
-    random.seed(42)
-    random.shuffle(rows)
-    cut = int(len(rows) * TRAIN_RATIO)
-    for path, data in [(train_path, rows[:cut]), (eval_path, rows[cut:])]:
-        with open(path, "w", newline="", encoding="utf-8") as f:
-            w = csv.writer(f, delimiter="|")
-            w.writerow(header)
-            w.writerows(data)
-    return len(rows[:cut]), len(rows[cut:])
-
-
-def append_to_global(global_csv, local_csv, municipio, provincia):
-    if not Path(local_csv).exists():
-        return
-    with open(local_csv, newline="", encoding="utf-8") as f:
-        rows = [r for r in csv.reader(f, delimiter="|") if r[0] != "audio"]
-    new_rows = [
-        [row[0], row[1], row[2] if len(row) > 2 else LANG, municipio, provincia]
-        for row in rows
-    ]
-    global_exists = Path(global_csv).exists()
-    with open(global_csv, "a", newline="", encoding="utf-8") as f:
-        w = csv.writer(f, delimiter="|")
-        if not global_exists:
-            w.writerow(HEADER_GLOBAL)
-        w.writerows(new_rows)
+# split_train_eval y append_to_global se importan de data.csv_store (arriba).
+# Esas versiones deduplican por path para evitar la multiplicación del corpus
+# global y la fuga train/eval. No redefinirlas aquí: sombrearían el arreglo.
 
 
 # ─── Toponimos NGA ────────────────────────────────────────────────────────────
@@ -595,9 +569,9 @@ def process_directory(params: dict, nga_toponimos: dict):
 
     errores = []; nuevos = 0; omitidos = 0
 
-    # Calcular el siguiente número de archivo según WAVs ya existentes en wavdir
+    # Calcular el siguiente número de archivo según WAVs ya existentes en wav_dir
     _pat = re.compile(rf"^{re.escape(cod_municipio)}_{re.escape(hablante_id)}_([0-9]{{2}})")
-    _nums = [int(m.group(1)) for f in wavdir.iterdir() if (m := _pat.match(f.stem))]
+    _nums = [int(m.group(1)) for f in wav_dir.iterdir() if (m := _pat.match(f.stem))]
     counter = max(_nums, default=0) + 1
     if _nums:
         print(f"  ↪ Numeración continúa desde {counter:02d} ({len(_nums)} WAVs previos detectados).")

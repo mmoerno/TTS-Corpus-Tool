@@ -37,6 +37,17 @@ def split_train_eval(csv_path, train_path, eval_path, header: list, write_header
         return 0, 0
     with open(csv_path, newline="", encoding="utf-8") as f:
         rows = [r for r in csv.reader(f, delimiter="|") if r and r[0] != "audio"]
+    # Deduplicar por path (row[0]) preservando la primera aparición: evita que
+    # copias del mismo audio caigan a la vez en train y en eval (fuga de datos)
+    # cuando la fuente trae duplicados (p. ej. el metadata_global).
+    seen = set()
+    unique_rows = []
+    for r in rows:
+        if r[0] in seen:
+            continue
+        seen.add(r[0])
+        unique_rows.append(r)
+    rows = unique_rows
     random.seed(42)
     random.shuffle(rows)
     cut = int(len(rows) * TRAIN_RATIO)
@@ -54,10 +65,17 @@ def append_to_global(global_csv, local_csv, municipio: str, provincia: str):
         return
     with open(local_csv, newline="", encoding="utf-8") as f:
         rows = [r for r in csv.reader(f, delimiter="|") if r[0] != "audio"]
+    # Solo añadir filas cuyo path (row[0]) no esté ya en el global. Antes se
+    # volcaba TODO el metadata local en cada pasada, multiplicando el corpus
+    # global (cada clip aparecía tantas veces como veces se procesaba).
+    existing = load_existing(global_csv)
     new_rows = [
         [row[0], row[1], row[2] if len(row) > 2 else LANG, municipio, provincia]
         for row in rows
+        if row[0] not in existing
     ]
+    if not new_rows:
+        return
     global_exists = Path(global_csv).exists()
     with open(global_csv, "a", newline="", encoding="utf-8") as f:
         w = csv.writer(f, delimiter="|")
