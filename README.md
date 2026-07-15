@@ -55,8 +55,11 @@ Si la API y la GUI corren en máquinas distintas (no es el caso habitual), ajust
 python -m venv venv
 venv\Scripts\Activate.ps1
 pip install --upgrade pip setuptools wheel
+pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
 pip install -r requirements.txt
 ```
+
+**El orden importa**: PyTorch va antes que `requirements.txt` a propósito. `openai-whisper` (incluido en `requirements.txt`) depende de `torch` sin fijar versión ni índice. Si se instala `requirements.txt` primero, pip resuelve `torch` desde el índice normal de PyPI (build genérica, no la de solo CPU) y el comando de PyTorch, al encontrarlo "ya satisfecho", solo instala `torchaudio` — dejando ambos paquetes en versiones no emparejadas entre sí (visto en pruebas reales: `torch 2.13.0` + `torchaudio 2.11.0+cpu`, incompatibles). Instalando PyTorch primero se evita este problema.
 
 #### Dependencias del `requirements.txt`
 
@@ -85,9 +88,9 @@ pip install TTS
 **XTTS v2 (Python 3.12, fork Idiap)**:
 ```bash
 pip install git+https://github.com/idiap/coqui-ai-TTS
-pip install torch==2.7.1+cpu torchaudio==2.7.1+cpu \
-    --index-url https://download.pytorch.org/whl/cpu
+pip install "huggingface_hub<1.0" --force-reinstall --no-deps
 ```
+(PyTorch se instala aparte, antes que `requirements.txt` — ver más arriba. No fijar versión exacta: los pines antiguos, como `2.7.1+cpu`, dejan de estar disponibles en el índice de PyTorch con el tiempo. La segunda línea es necesaria porque el fork de TTS exige `huggingface_hub<1.0`, versión anterior a la que pide el resto del proyecto (`>=1.2.0`); se prioriza la que necesita TTS para poder entrenar.)
 
 **Piper**:
 ```bash
@@ -109,6 +112,8 @@ powershell -ExecutionPolicy Bypass -File install_v2.ps1
 ```
 
 **Sin usar terminal en absoluto**: `Instalar.exe` e `IniciarApp.exe` son los mismos dos scripts compilados con [ps2exe](https://github.com/MScholtes/PS2EXE) — doble clic y listo, no hace falta abrir PowerShell manualmente (aunque sí se abre una ventana de consola para mostrar el progreso y los prompts interactivos, como la contraseña de PostgreSQL). Si los recompilas tras editar los `.ps1`, recuerda que dentro de un `.exe` compilado `$PSScriptRoot` no se resuelve — ambos scripts ya usan la carpeta del propio ejecutable como alternativa.
+
+Si el instalador se ejecuta más de una vez sobre la misma carpeta y el `.env` ya existe pero le falta `JWT_SECRET` (o quedó con el valor de plantilla de `.env.example`), lo detecta y genera uno nuevo automáticamente — no hace falta borrar el fichero a mano. Avisos como `piper-phonemize no disponible para esta plataforma` o el fallback a SQLite son informativos, no errores: el instalador sigue hasta el final en ambos casos (ver nota de desarrollo más abajo sobre por qué esto no era así hasta julio de 2026).
 
 #### Configuración manual de la base de datos
 
@@ -485,8 +490,6 @@ Provincias soportadas: Almería (04), Cádiz (11), Córdoba (14), Granada (18), 
 
 Los topónimos se usan como prompt de Whisper para mejorar el reconocimiento de nombres propios locales. Se cargan desde `NGA_TOPONIMOS_*.csv` (Nomenclátor Geográfico de Andalucía, IGN) via `data/migrar_nga.py`.
 
-> **Nota sobre este repositorio público**: la versión original del catálogo NGA (26 937 topónimos: parajes, cortijos, arroyos, accidentes geográficos... con sus coordenadas) es un dato confidencial y no se puede publicar. El `NGA_TOPONIMOS_20260309.csv` incluido aquí es una versión reducida a información pública: los 785 municipios de las 8 provincias de Andalucía con su nombre oficial y código INE (fuente: [INE](https://www.ine.es/daco/daco42/codmun/codmun.htm)), usando el propio nombre del municipio como marcador de posición en vez de un topónimo real. Sirve para ejecutar `data/migrar_nga.py` y construir la base de datos con la tabla `municipio` completa desde el primer momento; solo se pierde el prompt de topónimos NGA real para Whisper. Si tienes acceso a un catálogo NGA completo propio, puedes sustituir el fichero por el tuyo manteniendo el mismo nombre y columnas.
-
 #### `usuario`
 | columna       | tipo         | descripción                                     |
 |---------------|--------------|-------------------------------------------------|
@@ -748,9 +751,9 @@ tts.tts_to_file(text="Texto a sintetizar", speaker_wav="referencia.wav",
 **Python 3.12**: la versión oficial de CoquiTTS no es compatible. Usar el fork de Idiap:
 ```bash
 pip install git+https://github.com/idiap/coqui-ai-TTS
-pip install torch==2.7.1+cpu torchaudio==2.7.1+cpu \
-    --index-url https://download.pytorch.org/whl/cpu
+pip install "huggingface_hub<1.0" --force-reinstall --no-deps
 ```
+(Instalar PyTorch aparte, sin fijar versión — ver [detalles de instalación](#instalación).)
 
 ### Piper TTS (Rhasspy)
 
@@ -937,7 +940,7 @@ El código de la primera parte del nombre de archivo permite filtrar por hablant
 | Dataset de audio | `rsync` / pendrive / scp | Carpeta `dataset/` — puede ser grande |
 | Modelos HF (XTTS) | Copiar `.hf_cache/` | ~1.8 GB; si no se copia, se vuelven a descargar |
 | `.env` | Copiar y editar | Ajustar credenciales de BD de la nueva máquina |
-| `NGA_TOPONIMOS_*.csv` | Incluido en el código | Versión reducida a datos públicos de municipio (ver [Sección 6](#6-base-de-datos)) — sustituye por tu catálogo NGA completo si lo tienes |
+| `NGA_TOPONIMOS_*.csv` | Incluido en el código | Ya está en el repositorio |
 
 ### Procedimiento completo
 
@@ -1088,11 +1091,17 @@ def endpoint(user: CurrentUser = None):
 
 **Solución**:
 ```bash
+pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
 pip install git+https://github.com/idiap/coqui-ai-TTS
-pip install torch==2.7.1+cpu torchaudio==2.7.1+cpu \
-    --index-url https://download.pytorch.org/whl/cpu --no-cache-dir
+pip install "huggingface_hub<1.0" --force-reinstall --no-deps
 ```
-Versiones de torch y torchaudio deben coincidir en major.minor.
+Instalar PyTorch **antes** que `requirements.txt`/TTS (ver [Entorno Python manual](#entorno-python-manual)): si se instala después, pip puede dejar `torch` y `torchaudio` en versiones no emparejadas entre sí. No fijar versión exacta de PyTorch — los pines antiguos (p. ej. `2.7.1+cpu`) dejan de estar disponibles en el índice con el tiempo.
+
+### (Desarrollo) Un paso "no fatal" del instalador aborta todo el script en PowerShell
+
+**Causa**: con `$ErrorActionPreference = "Stop"` (usado en `install.ps1`/`install_v2.ps1`), si un comando nativo (`pip`, `psql`...) termina con código de salida distinto de cero **y** escribe algo en stderr, PowerShell lo convierte en un error terminante que aborta el script entero en ese punto — incluso con `2>$null` puesto en la llamada, e incluso si el propio código ya comprueba `$LASTEXITCODE` a continuación para decidir si es fatal o no: ese `if` nunca se alcanza. Se detectó porque `piper-phonemize` no publica wheel para algunas combinaciones de plataforma/Python, lo que debía terminar en un simple aviso ("Piper puede no funcionar") pero en la práctica cortaba el instalador ahí mismo, dejando el `.env` (y todo lo posterior) sin crear.
+
+**Solución**: envolver cada llamada nativa que deba considerarse no fatal en `try { ... } catch {}`, y comprobar `$LASTEXITCODE` después del bloque, no dentro de una condición que dependa de que la llamada no haya lanzado ya un error terminante. Aplicado a los pasos de pip, Piper, `psql` y la inicialización del esquema en ambos instaladores.
 
 ### Las exportaciones muestran transcripciones de Whisper, no las corregidas
 
@@ -1121,9 +1130,9 @@ app.launch(..., theme=gr.themes.Soft(primary_hue="orange"))
 
 **Causa**: la librería TTS importa `torchaudio` internamente; si no está instalado la importación falla con un error que se captura mostrando el mensaje genérico de "no instalado".
 
-**Solución**: instalar `torchaudio` de la versión correcta (debe coincidir en major.minor con `torch`):
+**Solución**: instalar `torchaudio` de la versión correcta (debe coincidir en major.minor con `torch`; ver la nota de orden de instalación en [Entorno Python manual](#entorno-python-manual)):
 ```bash
-pip install torchaudio==2.7.1+cpu --index-url https://download.pytorch.org/whl/cpu
+pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
 ```
 
 ---
