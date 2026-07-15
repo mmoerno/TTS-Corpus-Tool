@@ -34,6 +34,25 @@ echo "[...] Arrancando servicio de PostgreSQL..."
 sudo systemctl enable --now postgresql 2>/dev/null || sudo service postgresql start 2>/dev/null || true
 echo "[OK] PostgreSQL activo"
 
+# 2.5. Verificar version de Python (rango 3.10-3.12: numpy, PyTorch y
+#      piper-phonemize solo publican wheels precompiladas para estas
+#      versiones; una version mas nueva obliga a compilar numpy desde
+#      codigo fuente, lo que puede fallar sin las cabeceras de compilacion
+#      adecuadas y producir errores confusos varios pasos despues)
+PY_VER_CHECK=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null || echo "")
+if [ -z "$PY_VER_CHECK" ]; then
+    echo "[ERROR] python3 no encontrado. Instala Python 3.10-3.12 (sudo apt install python3)."
+    exit 1
+fi
+PY_MAJOR=$(echo "$PY_VER_CHECK" | cut -d. -f1)
+PY_MINOR=$(echo "$PY_VER_CHECK" | cut -d. -f2)
+if [ "$PY_MAJOR" -ne 3 ] || [ "$PY_MINOR" -lt 10 ] || [ "$PY_MINOR" -gt 12 ]; then
+    echo "[ERROR] Python $PY_VER_CHECK no esta soportado. Este proyecto requiere Python 3.10, 3.11 o 3.12."
+    echo "        Instala una de esas versiones (p. ej. sudo apt install python3.11) y vuelve a ejecutar este script."
+    exit 1
+fi
+echo "[OK] Python $PY_VER_CHECK"
+
 # 3. Crear venv
 VENV="$PROJECT_ROOT/venv"
 if [ ! -d "$VENV" ]; then
@@ -47,40 +66,53 @@ fi
 PIP="$VENV/bin/pip"
 PYTHON="$VENV/bin/python"
 
+# Instala un paquete y falla con un mensaje claro si pip no puede completarlo
+# (con "set -e" el script ya se detendria igualmente, pero sin explicar por
+# que; esta funcion deja un diagnostico accionable antes de abortar).
+install_pip_package() {
+    local description="$1"
+    shift
+    echo "[...] $description..."
+    if ! "$PIP" install "$@" --quiet; then
+        echo "[ERROR] Fallo instalando: $description. Revisa el mensaje de pip mas arriba."
+        exit 1
+    fi
+    echo "[OK] $description"
+}
+
 # 4. Actualizar pip
-echo "[...] Actualizando pip..."
-"$PIP" install --upgrade pip setuptools wheel --quiet
+install_pip_package "Actualizando pip" --upgrade pip setuptools wheel
 
 # 5. Dependencias base
-echo "[...] Instalando dependencias base..."
-"$PIP" install -r "$PROJECT_ROOT/requirements.txt" --quiet
-echo "[OK] Dependencias base instaladas"
+install_pip_package "Dependencias base" -r "$PROJECT_ROOT/requirements.txt"
 
-# 6. PyTorch
-echo "[...] Instalando PyTorch..."
+# 6. PyTorch (sin pin de version exacta: las versiones antiguas dejan de
+#    publicarse en el indice de PyTorch con el tiempo — p. ej. 2.7.1+cpu ya
+#    no esta disponible —, asi que dejamos que pip resuelva la mas reciente
+#    compatible entre torch y torchaudio)
 if [ "$IS_ARM" = true ]; then
     # Raspberry Pi: usar wheels de PyPI (CPU, ARM)
-    "$PIP" install torch torchaudio --quiet
-    echo "[OK] PyTorch ARM instalado (puede tardar varios minutos)"
+    install_pip_package "PyTorch ARM (puede tardar varios minutos)" torch torchaudio
 else
     # Linux x86 sin GPU
-    "$PIP" install torch==2.7.1+cpu torchaudio==2.7.1+cpu \
-        --index-url https://download.pytorch.org/whl/cpu --quiet
-    echo "[OK] PyTorch CPU instalado"
+    install_pip_package "PyTorch CPU" torch torchaudio --index-url https://download.pytorch.org/whl/cpu
 fi
 
-# 7. CoquiTTS
+# 7. transformers + CoquiTTS
+install_pip_package "transformers" "transformers==4.57.6"
+
 PY_VER=$("$PYTHON" -c "import sys; print(f'{sys.version_info.major}{sys.version_info.minor}')")
-echo "[...] Instalando TTS (Python $("$PYTHON" --version))..."
 if [ "$IS_ARM" = true ]; then
     echo "[AVISO] CoquiTTS/XTTS v2 no es viable en Raspberry Pi (sin GPU, poca RAM)."
     echo "        Se omite la instalacion de TTS. Usa Piper para sintesis en RPi."
 elif [ "$PY_VER" -ge "312" ]; then
-    "$PIP" install "git+https://github.com/idiap/coqui-ai-TTS" --quiet
-    echo "[OK] TTS (fork Idiap) instalado"
+    install_pip_package "TTS (fork Idiap, Python 3.12)" "git+https://github.com/idiap/coqui-ai-TTS"
+    # El fork de TTS exige huggingface_hub<1.0; requirements.txt pide >=1.2.0
+    # para el resto de la app. Nos quedamos con la version compatible con TTS,
+    # que es la que hace falta para poder hacer fine-tuning.
+    install_pip_package "huggingface_hub (version compatible con TTS)" "huggingface_hub<1.0" --force-reinstall --no-deps
 else
-    "$PIP" install TTS --quiet
-    echo "[OK] TTS instalado"
+    install_pip_package "TTS" TTS
 fi
 
 # Piper siempre (funciona bien en ARM)

@@ -23,15 +23,16 @@ huggingface_hub>=1.2.0
 numpy>=1.26,<2.3
 
 # ============================================================
-# PyTorch — instalar POR SEPARADO según plataforma:
+# PyTorch — instalar POR SEPARADO según plataforma. Sin fijar versión
+# exacta: los pins antiguos (p. ej. 2.7.1+cpu) dejan de estar disponibles
+# en el índice de PyTorch con el tiempo; dejamos que pip resuelva la más
+# reciente compatible entre torch y torchaudio.
 #
 # Windows/Linux CPU (sin GPU):
-#   pip install torch==2.7.1+cpu torchaudio==2.7.1+cpu \
-#       --index-url https://download.pytorch.org/whl/cpu
+#   pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
 #
 # Linux con CUDA 12.x:
-#   pip install torch torchaudio \
-#       --index-url https://download.pytorch.org/whl/cu121
+#   pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
 #
 # Raspberry Pi (ARM, sin GPU):
 #   pip install torch torchaudio

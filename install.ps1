@@ -9,13 +9,27 @@ Write-Host ""
 Write-Host "=== Instalador Dataset TTS Multiaccento Andaluz (Windows) ==="
 Write-Host ""
 
-# 1. Verificar Python
+# 1. Verificar Python (rango 3.10-3.12: numpy, PyTorch y piper-phonemize solo
+#    publican wheels precompiladas para estas versiones. Una version mas nueva
+#    (p. ej. 3.13/3.14, la que instala hoy la Microsoft Store) obliga a pip a
+#    compilar numpy desde codigo fuente, lo que falla sin un compilador C
+#    instalado (MSVC/gcc/clang) y produce errores confusos de "meson" o
+#    "vswhere.exe" varios pasos despues de este aviso, en vez de aqui mismo.
 $PythonCmd = (Get-Command python -ErrorAction SilentlyContinue)
 if (-not $PythonCmd) {
     Write-Error "Python no encontrado. Instala Python 3.10-3.12 desde python.org"
     exit 1
 }
 $PyVer = python --version 2>&1
+$PyVerNum = & python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>$null
+if (-not $PyVerNum -or [version]$PyVerNum -lt [version]"3.10" -or [version]$PyVerNum -gt [version]"3.12") {
+    Write-Host ""
+    Write-Error "$PyVer no esta soportado. Este proyecto requiere Python 3.10, 3.11 o 3.12 (recomendado: 3.11)."
+    Write-Host "        Instala una de esas versiones desde python.org y vuelve a ejecutar este script."
+    Write-Host "        Si tienes varias versiones instaladas en paralelo, usa: py -3.11 -m venv venv"
+    Write-Host "        (o usa install_v2.ps1, que instala Python 3.12 automaticamente si falta)."
+    exit 1
+}
 Write-Host "[OK] $PyVer"
 
 # 2. Verificar dependencias externas del sistema (ffmpeg, espeak-ng, psql)
@@ -60,34 +74,46 @@ if (-not (Test-Path $VenvPath)) {
 $Pip    = Join-Path $VenvPath "Scripts\pip.exe"
 $Python = Join-Path $VenvPath "Scripts\python.exe"
 
+# Instala un paquete y comprueba el codigo de salida real de pip: sin esto,
+# un fallo de compilacion (p. ej. numpy sin wheel para esta version de Python)
+# quedaba enmascarado por un "[OK]" que se imprimia igual, y el problema solo
+# se descubria minutos despues al arrancar la API/GUI con un modulo faltante.
+function Install-PipPackage {
+    param([string[]]$PipArgs, [string]$Description)
+    Write-Host "[...] $Description..."
+    & $Pip install @PipArgs --quiet
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[ERROR] Fallo instalando: $Description. Revisa el mensaje de pip mas arriba."
+        exit 1
+    }
+    Write-Host "[OK] $Description"
+}
+
 # 4. Actualizar pip
-Write-Host "[...] Actualizando pip..."
-& $Pip install --upgrade pip setuptools wheel --quiet
+Install-PipPackage -PipArgs @("--upgrade", "pip", "setuptools", "wheel") -Description "Actualizando pip"
 
 # 5. Dependencias base
-Write-Host "[...] Instalando dependencias base..."
-& $Pip install -r (Join-Path $ProjectRoot "requirements.txt") --quiet
-Write-Host "[OK] Dependencias base instaladas"
+Install-PipPackage -PipArgs @("-r", (Join-Path $ProjectRoot "requirements.txt")) -Description "Dependencias base"
 
-# 6. PyTorch CPU
-Write-Host "[...] Instalando PyTorch CPU..."
-& $Pip install torch==2.7.1+cpu torchaudio==2.7.1+cpu `
-    --index-url https://download.pytorch.org/whl/cpu --quiet
-Write-Host "[OK] PyTorch instalado"
+# 6. PyTorch CPU (sin pin de version exacta: las versiones antiguas dejan de
+#    publicarse en el indice de PyTorch con el tiempo — p. ej. 2.7.1+cpu ya
+#    no esta disponible —, asi que dejamos que pip resuelva la mas reciente
+#    compatible entre torch y torchaudio)
+Install-PipPackage -PipArgs @("torch", "torchaudio", "--index-url", "https://download.pytorch.org/whl/cpu") -Description "PyTorch CPU"
 
 # 7. transformers + CoquiTTS (fork Idiap para Python 3.12)
-Write-Host "[...] Instalando transformers..."
-& $Pip install "transformers==4.57.6" --quiet
-Write-Host "[OK] transformers instalado"
+Install-PipPackage -PipArgs @("transformers==4.57.6") -Description "transformers"
 
 $PyVerNum = & $Python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
-Write-Host "[...] Instalando TTS (Python $PyVerNum)..."
 if ([version]$PyVerNum -ge [version]"3.12") {
-    & $Pip install "git+https://github.com/idiap/coqui-ai-TTS" --quiet
+    Install-PipPackage -PipArgs @("git+https://github.com/idiap/coqui-ai-TTS") -Description "TTS (fork Idiap, Python 3.12)"
+    # El fork de TTS exige huggingface_hub<1.0; requirements.txt pide >=1.2.0
+    # para el resto de la app. Nos quedamos con la version compatible con TTS,
+    # que es la que hace falta para poder hacer fine-tuning.
+    Install-PipPackage -PipArgs @("huggingface_hub<1.0", "--force-reinstall", "--no-deps") -Description "huggingface_hub (version compatible con TTS)"
 } else {
-    & $Pip install TTS --quiet
+    Install-PipPackage -PipArgs @("TTS") -Description "TTS"
 }
-Write-Host "[OK] TTS instalado"
 
 # 8. Piper (fine-tuning ligero, recomendado para Raspberry Pi pero instalable aqui tambien)
 Write-Host "[...] Instalando Piper..."
