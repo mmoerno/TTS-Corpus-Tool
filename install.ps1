@@ -81,7 +81,6 @@ if (-not (Test-Path $VenvPath)) {
     Write-Host "[OK] venv ya existe"
 }
 
-$Pip    = Join-Path $VenvPath "Scripts\pip.exe"
 $Python = Join-Path $VenvPath "Scripts\python.exe"
 
 # Instala un paquete y comprueba el codigo de salida real de pip: sin esto,
@@ -91,7 +90,11 @@ $Python = Join-Path $VenvPath "Scripts\python.exe"
 function Install-PipPackage {
     param([string[]]$PipArgs, [string]$Description)
     Write-Host "[...] $Description..."
-    & $Pip install @PipArgs --quiet
+    # "python -m pip" y no "pip.exe" directamente: pip no puede sobreescribir
+    # su propio .exe mientras se esta ejecutando como tal en Windows, lo que
+    # rompe justamente el primer paso (actualizar pip) con "ERROR: To modify
+    # pip, please run ... python.exe -m pip install --upgrade pip".
+    & $Python -m pip install @PipArgs --quiet
     if ($LASTEXITCODE -ne 0) {
         Write-Host "[ERROR] Fallo instalando: $Description. Revisa el mensaje de pip mas arriba."
         exit 1
@@ -127,7 +130,7 @@ if ([version]$PyVerNum -ge [version]"3.12") {
 
 # 8. Piper (fine-tuning ligero, recomendado para Raspberry Pi pero instalable aqui tambien)
 Write-Host "[...] Instalando Piper..."
-& $Pip install piper-tts piper-phonemize --quiet 2>$null
+& $Python -m pip install piper-tts piper-phonemize --quiet 2>$null
 if ($LASTEXITCODE -eq 0) {
     Write-Host "[OK] Piper instalado"
 } else {

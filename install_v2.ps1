@@ -173,14 +173,17 @@ if (-not (Test-Path $VenvPath)) {
 } else {
     Write-Host "[OK] venv ya existe"
 }
-$Pip    = Join-Path $VenvPath "Scripts\pip.exe"
 $Python = Join-Path $VenvPath "Scripts\python.exe"
 
 function Install-PipPackage {
     param([string[]]$PipArgs, [string]$Description)
     Write-Host "[...] $Description..."
     $trustedHosts = @("--trusted-host", "pypi.org", "--trusted-host", "files.pythonhosted.org", "--trusted-host", "download.pytorch.org")
-    & $Pip install @PipArgs @trustedHosts --quiet
+    # "python -m pip" y no "pip.exe" directamente: pip no puede sobreescribir
+    # su propio .exe mientras se esta ejecutando como tal en Windows, lo que
+    # rompe justamente el primer paso (actualizar pip) con "ERROR: To modify
+    # pip, please run ... python.exe -m pip install --upgrade pip".
+    & $Python -m pip install @PipArgs @trustedHosts --quiet
     if ($LASTEXITCODE -ne 0) {
         Write-Error "Fallo instalando: $Description (pip args: $PipArgs). Revisa el mensaje de pip mas arriba."
         exit 1
@@ -212,7 +215,7 @@ Install-PipPackage -PipArgs @("huggingface_hub<1.0", "--force-reinstall", "--no-
 
 # 8. Piper
 Write-Host "[...] Instalando Piper..."
-& $Pip install piper-tts piper-phonemize --trusted-host pypi.org --trusted-host files.pythonhosted.org --quiet 2>$null
+& $Python -m pip install piper-tts piper-phonemize --trusted-host pypi.org --trusted-host files.pythonhosted.org --quiet 2>$null
 if ($LASTEXITCODE -eq 0) { Write-Host "[OK] Piper instalado" }
 else { Write-Host "[AVISO] piper-phonemize no disponible para esta plataforma - Piper puede no funcionar." }
 
