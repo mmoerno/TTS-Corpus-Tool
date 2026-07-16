@@ -12,6 +12,8 @@ Herramienta de TFG (Trabajo de Fin de Grado) para la construcción, revisión y 
 
 **Requisitos**: Python **3.10, 3.11 o 3.12** (3.12 necesita un paso extra para XTTS v2, explicado más abajo; versiones más recientes de Python no se han probado y pueden fallar) · PostgreSQL 14+ · ffmpeg. `espeak-ng` solo hace falta si vas a usar Piper; CUDA solo si vas a usar F5-TTS o XTTS con GPU.
 
+> **Recomendado antes de instalar: ffmpeg.** Es la única dependencia externa pesada. Si ya está instalado, el instalador lo detecta y sigue. Si no, el instalador reforzado (`install_v2.ps1` / `Instalar.exe`) lo descarga e instala solo (~90 MB), pero eso puede tardar varios minutos según la conexión. Para evitar esa espera, instálalo antes: en Windows `winget install Gyan.FFmpeg` (o `choco install ffmpeg`); en Linux `sudo apt install ffmpeg`. Comprueba con `ffmpeg -version`.
+
 ### Windows
 
 1. Doble clic en **`Instalar.exe`** (o, desde una terminal: `powershell -ExecutionPolicy Bypass -File install.ps1`). Si es una máquina completamente limpia sin Python ni Git instalados, usa `install_v2.ps1` en su lugar (ver detalles más abajo).

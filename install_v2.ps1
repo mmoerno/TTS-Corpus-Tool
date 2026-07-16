@@ -153,10 +153,15 @@ $FfmpegCmd = Get-Command ffmpeg -ErrorAction SilentlyContinue
 if ($FfmpegCmd) {
     Write-Host "[OK] ffmpeg encontrado en PATH"
 } else {
-    Write-Host "[...] ffmpeg no encontrado. Se descargara e instalara (build estatico gyan.dev)."
+    Write-Host "[AVISO] ffmpeg no esta instalado. Se descargara e instalara automaticamente"
+    Write-Host "        (~90 MB); esto puede tardar VARIOS MINUTOS segun tu conexion."
+    Write-Host "        Para evitarlo en el futuro, puedes cancelar ahora (Ctrl+C),"
+    Write-Host "        instalar ffmpeg aparte (p. ej. 'winget install Gyan.FFmpeg' o"
+    Write-Host "        'choco install ffmpeg') y volver a lanzar el instalador."
+    Start-Sleep -Seconds 3
     try {
         $ffZip = Join-Path $env:TEMP "ffmpeg.zip"
-        Write-Host "      Descargando ffmpeg (~90 MB, puede tardar segun la conexion)..."
+        Write-Host "      Descargando ffmpeg..."
         Invoke-DownloadWithFallback -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile $ffZip
         $ffExtract = Join-Path $env:TEMP "ffmpeg_extract"
         if (Test-Path $ffExtract) { Remove-Item -Recurse -Force $ffExtract }
