@@ -155,10 +155,14 @@ if ($FfmpegCmd) {
 } else {
     Write-Host "[AVISO] ffmpeg no esta instalado. Se descargara e instalara automaticamente"
     Write-Host "        (~90 MB); esto puede tardar VARIOS MINUTOS segun tu conexion."
-    Write-Host "        Para evitarlo en el futuro, puedes cancelar ahora (Ctrl+C),"
-    Write-Host "        instalar ffmpeg aparte (p. ej. 'winget install Gyan.FFmpeg' o"
-    Write-Host "        'choco install ffmpeg') y volver a lanzar el instalador."
-    Start-Sleep -Seconds 3
+    Write-Host ""
+    Write-Host "        ES MUCHO MAS RAPIDO cancelar ahora (Ctrl+C) e instalarlo con:"
+    Write-Host "            winget install Gyan.FFmpeg"
+    Write-Host "        (o 'choco install ffmpeg'); luego cierra y reabre la terminal"
+    Write-Host "        y vuelve a lanzar el instalador, que lo detectara y seguira."
+    Write-Host ""
+    Write-Host "        Si prefieres esperar, la descarga automatica empieza en unos segundos..."
+    Start-Sleep -Seconds 4
     try {
         $ffZip = Join-Path $env:TEMP "ffmpeg.zip"
         Write-Host "      Descargando ffmpeg..."
