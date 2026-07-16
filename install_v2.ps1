@@ -28,6 +28,12 @@ trap {
     exit 1
 }
 
+# Desactivar la barra de progreso de Invoke-WebRequest: en Windows PowerShell
+# 5.1, redibujarla en cada bloque recibido ralentiza las descargas grandes de
+# forma brutal (hasta 10-50x mas lento). Sin esto, bajar el ZIP de ffmpeg
+# (~90 MB) o el instalador de Python puede tardar 15-30 min en vez de 1-2.
+$ProgressPreference = 'SilentlyContinue'
+
 # $PSScriptRoot no se resuelve dentro de un .exe compilado con ps2exe (se
 # queda vacio); en ese caso usamos la carpeta del propio ejecutable.
 if ($PSScriptRoot) {
