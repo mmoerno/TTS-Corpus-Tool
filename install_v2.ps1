@@ -79,11 +79,27 @@ $env:no_proxy = "localhost,127.0.0.1,0.0.0.0"
 
 function Invoke-DownloadWithFallback {
     param([string]$Uri, [string]$OutFile)
+    # System.Net.WebClient.DownloadFile en vez de Invoke-WebRequest: para
+    # ficheros grandes (el ZIP de ffmpeg ~90 MB, el instalador de Python) es
+    # varias veces mas rapido y, sobre todo, no depende de $ProgressPreference
+    # ni del host de progreso que ps2exe implementa por su cuenta dentro del
+    # .exe compilado — donde Invoke-WebRequest puede arrastrarse. Si WebClient
+    # falla (p. ej. un proxy que exige la pila de Invoke-WebRequest), se
+    # reintenta con el metodo antiguo antes de rendirse.
     try {
-        Invoke-WebRequest -Uri $Uri -OutFile $OutFile -UseBasicParsing
+        $wc = New-Object System.Net.WebClient
+        if ($env:HTTPS_PROXY) {
+            $wc.Proxy = New-Object System.Net.WebProxy($env:HTTPS_PROXY, $true)
+        }
+        $wc.DownloadFile($Uri, $OutFile)
     } catch {
-        Write-Host "[AVISO] Descarga fallida ($Uri): $($_.Exception.Message)"
-        throw
+        Write-Host "[AVISO] Descarga rapida fallo, reintentando ($Uri)..."
+        try {
+            Invoke-WebRequest -Uri $Uri -OutFile $OutFile -UseBasicParsing
+        } catch {
+            Write-Host "[AVISO] Descarga fallida ($Uri): $($_.Exception.Message)"
+            throw
+        }
     }
 }
 
@@ -137,17 +153,27 @@ $FfmpegCmd = Get-Command ffmpeg -ErrorAction SilentlyContinue
 if ($FfmpegCmd) {
     Write-Host "[OK] ffmpeg encontrado en PATH"
 } else {
-    Write-Host "[...] ffmpeg no encontrado. Intentando descarga directa (build estatico gyan.dev)..."
+    Write-Host "[...] ffmpeg no encontrado. Se descargara e instalara (build estatico gyan.dev)."
     try {
         $ffZip = Join-Path $env:TEMP "ffmpeg.zip"
+        Write-Host "      Descargando ffmpeg (~90 MB, puede tardar segun la conexion)..."
         Invoke-DownloadWithFallback -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile $ffZip
+        $ffExtract = Join-Path $env:TEMP "ffmpeg_extract"
+        if (Test-Path $ffExtract) { Remove-Item -Recurse -Force $ffExtract }
+        Write-Host "      Descomprimiendo..."
+        # [IO.Compression.ZipFile]::ExtractToDirectory es bastante mas rapido
+        # que Expand-Archive para ZIPs grandes con muchos ficheros.
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        [System.IO.Compression.ZipFile]::ExtractToDirectory($ffZip, $ffExtract)
         $ffDir = "C:\ffmpeg"
-        Expand-Archive -Path $ffZip -DestinationPath $env:TEMP\ffmpeg_extract -Force
-        $bin = Get-ChildItem -Path $env:TEMP\ffmpeg_extract -Recurse -Filter "ffmpeg.exe" | Select-Object -First 1
+        $bin = Get-ChildItem -Path $ffExtract -Recurse -Filter "ffmpeg.exe" | Select-Object -First 1
         New-Item -ItemType Directory -Force -Path $ffDir | Out-Null
+        Write-Host "      Instalando en $ffDir..."
         Copy-Item (Join-Path $bin.DirectoryName "*") $ffDir -Recurse -Force
         $env:Path += ";$ffDir"
         [Environment]::SetEnvironmentVariable("Path", "$([Environment]::GetEnvironmentVariable('Path','User'));$ffDir", "User")
+        Remove-Item -Recurse -Force $ffExtract -ErrorAction SilentlyContinue
+        Remove-Item -Force $ffZip -ErrorAction SilentlyContinue
         Write-Host "[OK] ffmpeg instalado en $ffDir"
     } catch {
         Write-Host "[AVISO] No se pudo instalar ffmpeg automaticamente. Necesario para procesar audios."
